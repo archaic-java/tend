@@ -30,4 +30,5 @@ if [ ! -f "$jar" ]; then
     trap - EXIT HUP INT TERM
 fi
 printf '%s  %s\n' 2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f "$jar" | sha256sum -c -
+chmod 0644 "$jar"
 jar --describe-module --file "$jar" --release 9
