@@ -149,3 +149,17 @@ against pinned application versions and exercise the adapters in a disposable In
 - [Caddy forward authentication](https://caddyserver.com/docs/caddyfile/directives/forward_auth)
 - [Authelia Caddy integration](https://www.authelia.com/integration/proxies/caddy/)
 - [Authelia configuration files and merging](https://www.authelia.com/configuration/methods/files/)
+
+## Managed file volumes and ID mapping
+
+A low-level volume containing managed files must declare `security.shifted=true`. Generated
+configuration, secret and gateway volumes use it automatically. Incus applies an idmapped mount
+instead of rewriting on-disk UIDs/GIDs at attachment, so the file API and container see consistent
+ownership. The host kernel and storage filesystem must support this Incus setting. Ordinary data
+volumes without managed files retain their declared mapping configuration.
+
+Incus overwrites existing file content while preserving ownership and mode. When either metadata
+field drifts, Tend first invalidates consumer activation, deletes the managed file, and recreates
+it with the declared metadata. A failure between deletion and recreation leaves activation pending;
+the next pass restores the missing file before activating its consumer. This repair is not an
+atomic file replacement.

@@ -13,6 +13,9 @@ public final class ResourceCompiler {
     public Deployment compile(DesiredState state) throws StateException {
         var instances = new LinkedHashMap<String, Instance>();
         state.instances().forEach(i -> instances.put(i.name(), i));
+        for (var volume : state.volumes())
+            if (!volume.files().isEmpty() && !"true".equals(volume.config().get("security.shifted")))
+                throw new StateException("Managed file volumes require explicit security.shifted=true");
         var volumes = new ArrayList<>(state.volumes());
         for (var instance : state.instances()) instances.put(instance.name(), mounts(instance, state, volumes));
         gateway(state, instances, volumes);
@@ -127,7 +130,7 @@ public final class ResourceCompiler {
         String fileSet = files.stream().map(DesiredState.File::path).sorted().toList().toString();
         String volume = generatedName("mount/" + instance.name() + "/" + name + "/" + files.getFirst().uid() + "/" + files.getFirst().gid() + "/" + fileSet);
         if (volumes.stream().anyMatch(v -> v.pool().equals(pool) && v.name().equals(volume))) throw new StateException("Generated volume collision");
-        volumes.add(new Volume(pool, volume, Map.of("initial.mode", "0700", "initial.uid", Integer.toString(files.getFirst().uid()), "initial.gid", Integer.toString(files.getFirst().gid())), files));
+        volumes.add(new Volume(pool, volume, Map.of("security.shifted", "true", "initial.mode", "0700", "initial.uid", Integer.toString(files.getFirst().uid()), "initial.gid", Integer.toString(files.getFirst().gid())), files));
         devices.put(name, Map.of("type", "disk", "pool", pool, "source", volume, "path", path, "readonly", "true"));
     }
     private static Instance copy(Instance i, Map<String, Map<String, String>> devices) {

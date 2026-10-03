@@ -65,6 +65,9 @@ public final class IncusClient implements AutoCloseable {
         return new File(response.body(), header(response, "uid"), header(response, "gid"),
                 header(response, "mode"), header(response, "type"));
     }
+    public void deleteFile(String volumePath, String filePath) throws IOException, InterruptedException {
+        envelope(send("DELETE", volumePath + "/files?path=" + encode(filePath), null, Map.of()));
+    }
     public void writeFile(String volumePath, String filePath, byte[] bytes, int uid, int gid, String mode)
             throws IOException, InterruptedException {
         envelope(send("POST", volumePath + "/files?path=" + encode(filePath), bytes, Map.of(

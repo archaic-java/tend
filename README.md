@@ -44,6 +44,8 @@ Supported in this slice:
 
 - Existing Incus projects, pools and networks are bootstrap prerequisites.
 - Declared custom filesystem volumes, configuration keys and root-level files with UID/GID/mode.
+  Volumes containing managed files require explicit `security.shifted=true`; generated configuration
+  and secret volumes enable it automatically. The host filesystem must support idmapped mounts.
 - Named container or VM instances from images already cached in Incus, identified by full fingerprint.
   A cached image may be OCI-derived; registry pulling is not implemented yet.
 - Explicit devices: disk, nic, gpu and unix-char; empty instance profiles.

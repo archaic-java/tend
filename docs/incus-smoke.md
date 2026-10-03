@@ -33,7 +33,7 @@ filtering; it does not prove OCI bootstrap, secret permissions, Caddy/Authelia s
 A separate reconciliation case runs the actual `once` CLI over HTTPS with an operator-authorized
 client certificate and a pinned server trust store. It authors XML and a configuration file in a
 disposable Git repository and pushes to a local bare `main`. The CLI creates a real custom volume
-and running unprivileged container with empty profiles. The case checks mounted bytes, UID/GID and
+with `security.shifted=true` and a running unprivileged container with empty profiles. The case checks mounted bytes, UID/GID and
 mode, ownership markers, no restart on an unchanged pass, repair of independently introduced config
 and file/permission drift, preservation of unrelated operator configuration, and activation of a
 new `main` commit. It checks `last-success` against each published commit. This covers the core

@@ -23,6 +23,7 @@ final class IncusMock implements AutoCloseable {
     int nextEtag;
     String failurePath;
     boolean failStart;
+    boolean failFileWrite;
     boolean stall;
     boolean conflict;
     boolean loseResponse;
@@ -149,9 +150,17 @@ final class IncusMock implements AutoCloseable {
             x.getResponseHeaders().set("X-Incus-mode", existing.mode());
             x.sendResponseHeaders(200, existing.bytes().length); x.getResponseBody().write(existing.bytes());
         } else if (method.equals("POST")) {
+            if (failFileWrite) { failFileWrite = false; error(x, 500); return; }
             var h = x.getRequestHeaders();
             if (!"file".equals(h.getFirst("X-Incus-type")) || !"overwrite".equals(h.getFirst("X-Incus-write"))) { error(x, 400); return; }
-            files.put(key, new StoredFile(x.getRequestBody().readAllBytes(), h.getFirst("X-Incus-uid"), h.getFirst("X-Incus-gid"), h.getFirst("X-Incus-mode")));
+            StoredFile old = files.get(key);
+            files.put(key, new StoredFile(x.getRequestBody().readAllBytes(),
+                    old == null ? h.getFirst("X-Incus-uid") : old.uid(),
+                    old == null ? h.getFirst("X-Incus-gid") : old.gid(),
+                    old == null ? h.getFirst("X-Incus-mode") : old.mode()));
+            mutations++; sync(x, new JsonObject());
+        } else if (method.equals("DELETE")) {
+            if (files.remove(key) == null) { error(x, 404); return; }
             mutations++; sync(x, new JsonObject());
         } else error(x, 405);
     }

@@ -8,6 +8,7 @@ import work.archaic.service.test.v02.*;
 public record RequirementsTests() implements TestSuite {
     public void cases(Collection<TestCase> cases) {
         cases.add(new NamedMounts());
+        cases.add(new UnshiftedFileVolume());
         cases.add(new MalformedIncusConfiguration());
         cases.add(new UnownedNetworkAcl());
         cases.add(new InvalidNumericAttribute());
@@ -44,6 +45,7 @@ record NamedMounts() implements TestCase {
             assert file.uid().equals("1000") && file.mode().equals("0400") : "Secret delivery must use declared ownership and private mode";
             var volume = f.mock.resources.get("/1.0/storage-pools/pool/volumes/custom/" + source).getAsJsonObject("config");
             assert volume.get("initial.uid").getAsString().equals("1000") : "Private volume directory must be accessible to the consuming UID";
+            assert volume.get("security.shifted").getAsString().equals("true") : "Generated volumes must keep on-disk IDs stable through idmapped mounts";
             byte[] original = file.bytes(); f.engine.reconcile(state);
             assert Arrays.equals(original, f.mock.files.get("/1.0/storage-pools/pool/volumes/custom/" + source + "/value").bytes()) : "Named secret references must retain generated values";
         }
@@ -300,6 +302,18 @@ record PublicOnlyIngress() implements TestCase {
             assert !caddy.contains("forward_auth") : "Explicit public routes must not require authentication";
             var policy = JsonParser.parseString(RequirementsFixture.text(f, "access-control.json")).getAsJsonObject().getAsJsonObject("access_control");
             assert policy.getAsJsonArray("rules").get(0).getAsJsonObject().get("policy").getAsString().equals("deny") : "Unused authorization policy must remain valid and deny by default";
+        }
+    }
+}
+
+record UnshiftedFileVolume() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (var f = new DeploymentFixture()) {
+            boolean rejected = false;
+            try { f.revision(Garden.xml().replace("<entry key=\"security.shifted\" value=\"true\"/>", ""), "version=one\n"); }
+            catch (work.archaic.tend.state.StateException expected) { rejected = true; }
+            assert rejected : "File volumes without explicit idmapped mounts must fail before deployment";
+            assert f.mock.mutations == 0 : "Unsupported ID mapping must not partially deploy resources";
         }
     }
 }

@@ -30,6 +30,8 @@ record MainConvergesRepairsDriftAndDeploysNewRevision() implements TestCase {
             incus.require("config", "set", "tend-ci-managed", "environment.DEMO=drift", "user.operator.note=preserve");
             Path wrong = garden.directory.resolve("wrong.conf"); Files.writeString(wrong, "drift\n");
             incus.require("file", "push", wrong.toString(), "tend-ci-managed/data/service.conf", "--uid=0", "--gid=0", "--mode=0600");
+            incus.require("exec", "tend-ci-managed", "--", "chown", "0:0", "/data/service.conf");
+            incus.require("exec", "tend-ci-managed", "--", "chmod", "0600", "/data/service.conf");
             assert garden.file().equals("drift\n") : "Fixture must establish actual file drift before testing repair";
             assert garden.permissions().equals("0:0:600") : "Fixture must establish ownership and mode drift";
             garden.reconcile();

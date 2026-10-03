@@ -18,6 +18,7 @@ public record ReconciliationTests() implements TestSuite {
         cases.add(new ConfigUpdate());
         cases.add(new Drift());
         cases.add(new FileDrift());
+        cases.add(new FileMetadataRepairRecovery());
         cases.add(new FileActivationFailure());
         cases.add(new SecretRestart());
         cases.add(new EtagConflict());
@@ -255,6 +256,29 @@ record Scope() implements TestCase {
             boolean rejected = false;
             try { other.reconcile(f.desired); } catch (IOException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Desired project cannot escape controller scope";
+        }
+    }
+}
+
+record FileMetadataRepairRecovery() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (var f = new DeploymentFixture()) {
+            f.deploy();
+            String path = Garden.VOLUME + "/service.conf";
+            f.mock.files.put(path, new IncusMock.StoredFile("version=one\n".getBytes(), "0", "0", "0600"));
+            f.mock.failFileWrite = true;
+            boolean failed = false;
+            try { f.engine.reconcile(f.desired); } catch (IOException expected) { failed = true; }
+            assert failed : "Failed recreation must remain a failed reconciliation";
+            assert !f.mock.files.containsKey(path) : "Fixture must exercise interruption after deletion";
+            assert !f.mock.resources.get(Garden.INSTANCE).getAsJsonObject("config").has("user.tend.activated") : "Missing managed file must leave its consumer activation pending";
+            var fresh = new Reconciler(f.client, new SecretStore(f.garden.state.resolve("secrets")), "garden", "test-controller");
+            fresh.reconcile(f.desired);
+            var file = f.mock.files.get(path);
+            assert new String(file.bytes()).equals("version=one\n") && file.uid().equals("1000") && file.gid().equals("1000") && file.mode().equals("0644") : "Next controller pass must recreate the missing file with desired bytes and metadata";
+            assert f.mock.running.get(Garden.INSTANCE) : "Recovered consumer must return to its running desired state";
+            int mutations = f.mock.mutations; fresh.reconcile(f.desired);
+            assert mutations == f.mock.mutations : "Recovery must finish in an idempotent state";
         }
     }
 }

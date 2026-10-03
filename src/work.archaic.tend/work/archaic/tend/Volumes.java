@@ -47,9 +47,12 @@ final class Volumes {
         for (var file : volume.files().stream().sorted(Comparator.comparing(DesiredState.File::path)).toList()) {
             byte[] content = file.secret().isBlank() ? file.content() : values.get(file.secret());
             var old = incus.file(path, file.path());
-            if (old == null || !Arrays.equals(content, old.content()) || !old.uid().equals(Integer.toString(file.uid())) ||
-                !old.gid().equals(Integer.toString(file.gid())) || !old.mode().equals(file.mode()) || !old.type().equals("file")) {
+            boolean metadataDrift = old != null && (!old.uid().equals(Integer.toString(file.uid())) ||
+                    !old.gid().equals(Integer.toString(file.gid())) || !old.mode().equals(file.mode()) || !old.type().equals("file"));
+            if (old == null || !Arrays.equals(content, old.content()) || metadataDrift) {
                 markConsumersPending(volume, instances);
+                // Incus overwrite preserves existing metadata; recreate to repair ownership or mode.
+                if (metadataDrift) incus.deleteFile(path, file.path());
                 incus.writeFile(path, file.path(), content, file.uid(), file.gid(), file.mode());
             }
             update(digest, file.path()); update(digest, Integer.toString(file.uid()));

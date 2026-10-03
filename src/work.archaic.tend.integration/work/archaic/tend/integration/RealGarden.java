@@ -76,6 +76,7 @@ final class RealGarden implements AutoCloseable {
         return """
                 <incus project="default">
                   <volume pool="tend-ci-pool" name="tend-ci-data">
+                    <config><entry key="security.shifted" value="true"/></config>
                     <file path="/service.conf" source="service.conf" uid="1000" gid="1000" mode="0640"/>
                   </volume>
                   <instance name="tend-ci-managed" fingerprint="%s">

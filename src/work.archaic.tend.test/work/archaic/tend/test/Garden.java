@@ -35,7 +35,7 @@ final class Garden implements AutoCloseable {
                 <incus project="garden">
                   <secret name="session" bytes="32"/>
                   <volume pool="pool" name="demo-data">
-                    <config><entry key="initial.mode" value="0700"/></config>
+                    <config><entry key="initial.mode" value="0700"/><entry key="security.shifted" value="true"/></config>
                     <file path="/service.conf" source="service.conf" uid="1000" gid="1000" mode="0644"/>
                     <file path="/session" secret="session" uid="1000" gid="1000" mode="0400"/>
                   </volume>
