@@ -7,7 +7,7 @@ The VM contains both OVN's central database/control plane and its local controll
 
 ## What it proves
 
-One named Minau case starts two containers on `tend-ci-ovn`, with static IPv4 addresses. The server
+The OVN Minau case starts two containers on `tend-ci-ovn`, with static IPv4 addresses. The server
 exposes the same HTTP response on 8080 and 8081. A statically linked BusyBox binary from the runner
 provides both servers and the client probe; guest package installation is unnecessary.
 
@@ -28,8 +28,20 @@ isolates ACL attachment and filtering rather than guest recovery after NIC repla
 Probes use new TCP connections, bounded command timeouts and readiness polling. No ICMP/ping
 assumptions, public ingress, certificates or guest internet access are involved. Assertions are
 inline Java assertions run with `-ea`. This case proves environment provisioning and actual packet
-filtering; it does not yet prove Tend reconciliation, OCI bootstrap, application configuration,
-secret permissions, Caddy/Authelia startup or authentication.
+filtering; it does not prove OCI bootstrap, secret permissions, Caddy/Authelia startup or user authentication.
+
+A separate reconciliation case runs the actual `once` CLI over HTTPS with an operator-authorized
+client certificate and a pinned server trust store. It authors XML and a configuration file in a
+disposable Git repository and pushes to a local bare `main`. The CLI creates a real custom volume
+and running unprivileged container with empty profiles. The case checks mounted bytes, UID/GID and
+mode, ownership markers, no restart on an unchanged pass, repair of independently introduced config
+and file/permission drift, preservation of unrelated operator configuration, and activation of a
+new `main` commit. It checks `last-success` against each published commit. This covers the core
+Git-to-Incus path, not the generated ingress/egress adapters or secret delivery.
+
+The cases use different resources and evidence directories so concurrent Minau execution is safe.
+TLS keys, private Java arguments and controller state are outside the uploaded artifact. The test
+uses the normal JSSE client/trust stores and hostname verification; there is no TLS bypass.
 
 ## Inputs and evidence
 
@@ -56,7 +68,7 @@ needs no repository secrets, external Incus credentials or published test images
 These scripts install packages, change host network services and create/delete fixed-name Incus
 resources in the default project. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
 existing Incus host. The scripts require `TEND_DISPOSABLE_RUNNER=yes` as an explicit environment
-selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG and working host internet access.
+selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3 and working host internet access.
 
 From Tend's repository root:
 
@@ -66,6 +78,7 @@ sh scripts/prepare
 javac @cmd/compile
 bash scripts/incus-smoke/install
 bash scripts/incus-smoke/prepare
+bash scripts/incus-smoke/authenticate
 java @cmd/incus-smoke
 bash scripts/incus-smoke/diagnostics
 bash scripts/incus-smoke/cleanup

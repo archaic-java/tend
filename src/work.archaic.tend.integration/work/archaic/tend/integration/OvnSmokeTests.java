@@ -10,7 +10,7 @@ public record OvnSmokeTests() implements TestSuite {
 }
 record EgressAllowsOnePortAndRejectsAnother() implements TestCase {
     public void run(TestTrail trail) throws Exception {
-        var incus = new IncusCommands();
+        var incus = new IncusCommands("ovn");
         prepareInstance(incus, "tend-ci-server", "10.77.1.11");
         prepareInstance(incus, "tend-ci-client", "10.77.1.10");
         Path response = Path.of("out/incus-smoke/index.html"); Files.writeString(response, "tend-ovn-smoke\n");

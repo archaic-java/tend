@@ -19,12 +19,16 @@ Preparation needs internet access. Compilation and tests then run offline. Minau
 cases against a stateful HTTP Incus mock and real temporary bare Git repositories. No live Incus
 credentials or GitHub credentials are needed. Dependencies are listed in [docs/development.md](docs/development.md).
 
-## Real Incus provisioning smoke test
+## Real Incus integration tests
 
 The `incus-smoke` job installs pinned Incus directly on a fresh `ubuntu-24.04` GitHub runner,
 configures standalone OVN, and runs `java @cmd/incus-smoke` with Minau. Two unprivileged Alpine
 containers expose two HTTP ports. The test proves both work, attaches an egress ACL, verifies
 8080 is allowed and 8081 is rejected, then detaches the ACL and verifies 8081 works again.
+
+A second Minau case invokes Tend’s CLI over authenticated HTTPS with a disposable Git remote.
+It verifies creation of a running container and mounted configuration volume, file ownership and
+mode, no restart on an unchanged pass, drift repair, and deployment of the next commit on `main`.
 
 The suite is separate from `cmd/test` and needs no homelab credentials or nested VMs. CI uploads
 command output, image fingerprint, package versions and Incus/OVN diagnostics on every run, then
@@ -58,8 +62,8 @@ use a new backing volume when the file set changes, so removed files are detache
 homelab deployment tool.
 
 See [docs/resource-model.md](docs/resource-model.md) for XML, Kubernetes comparisons, enforcement
-boundaries and the remaining homelab requirements. Policy generation is tested offline; actual
-application startup and packet filtering have not been validated against live services.
+boundaries and the remaining homelab requirements. Policy generation is tested offline; OVN packet filtering and basic Tend reconciliation are
+verified on the CI runner. Caddy/Authelia application startup remains unverified.
 
 ## Run a controller
 

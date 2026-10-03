@@ -8,17 +8,22 @@ import java.util.concurrent.TimeUnit;
 
 /** Bounded local CLI calls, with complete output retained in the CI artifact. */
 final class IncusCommands {
-    private final Path evidence = Path.of("out/incus-smoke");
+    private final Path evidence;
     private int sequence;
-    IncusCommands() throws IOException {
+    IncusCommands(String suite) throws IOException {
         if (!"yes".equals(System.getenv("TEND_DISPOSABLE_RUNNER")))
             throw new IOException("Integration tests require an explicitly disposable runner");
+        if (!suite.matches("[a-z-]+")) throw new IllegalArgumentException("Invalid evidence directory");
+        evidence = Path.of("out/incus-smoke", suite);
         Files.createDirectories(evidence);
     }
     record Result(int status, String output) {}
     Result run(Duration timeout, String... arguments) throws IOException, InterruptedException {
         List<String> command = new ArrayList<>(List.of("sudo", "-n", "incus"));
         command.addAll(List.of(arguments));
+        return command(timeout, command);
+    }
+    Result command(Duration timeout, List<String> command) throws IOException, InterruptedException {
         Path output = evidence.resolve("command-%03d.log".formatted(++sequence));
         Files.writeString(evidence.resolve("commands.txt"), output.getFileName() + " " + command + "\n",
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);

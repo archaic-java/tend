@@ -2,10 +2,16 @@
 # Safe only within the explicitly disposable test environment.
 set -u
 [[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]] || exit 1
-for name in tend-ci-client tend-ci-server; do
+for name in tend-ci-client tend-ci-server tend-ci-managed; do
     timeout 30 sudo incus delete "$name" --force || true
 done
 timeout 30 sudo incus network acl delete tend-ci-egress || true
 timeout 30 sudo incus network delete tend-ci-ovn || true
 timeout 30 sudo incus network delete tend-ci-uplink || true
+timeout 30 sudo incus storage volume delete tend-ci-pool tend-ci-data || true
+timeout 30 sudo incus config trust remove tend-ci-controller || true
+if [[ -f out/incus-smoke/credentials-directory.txt ]]; then
+    credentials=$(cat out/incus-smoke/credentials-directory.txt)
+    [[ $credentials == /tmp/tend-ci-tls.* ]] && rm -rf -- "$credentials"
+fi
 timeout 30 sudo incus storage delete tend-ci-pool || true

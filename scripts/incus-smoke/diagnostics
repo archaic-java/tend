@@ -25,6 +25,10 @@ for name in client server; do
     capture "$name-addresses" sudo incus exec "tend-ci-$name" -- /root/busybox ip address
     capture "$name-routes" sudo incus exec "tend-ci-$name" -- /root/busybox ip route
 done
+capture managed sudo incus config show tend-ci-managed --expanded
+capture managed-state sudo incus info tend-ci-managed
+capture managed-volume sudo incus storage volume show tend-ci-pool tend-ci-data
+capture operations sudo incus operation list
 capture acl sudo incus network acl show tend-ci-egress
 capture client-console sudo incus console tend-ci-client --show-log
 capture server-console sudo incus console tend-ci-server --show-log

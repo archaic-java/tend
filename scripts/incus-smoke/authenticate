@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Private, short-lived operator credentials for the controller's real HTTPS API test.
+set -euo pipefail
+[[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]]
+umask 077
+credentials=$(mktemp -d /tmp/tend-ci-tls.XXXXXX)
+printf '%s\n' "$credentials" >out/incus-smoke/credentials-directory.txt
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+    -subj /CN=tend-ci-controller -addext extendedKeyUsage=clientAuth \
+    -keyout "$credentials/client.key" -out "$credentials/client.crt"
+openssl pkcs12 -export -name tend-ci-controller \
+    -inkey "$credentials/client.key" -in "$credentials/client.crt" \
+    -out "$credentials/client.p12" -passout pass:disposable-ci
+sudo incus config trust add-certificate "$credentials/client.crt" --name tend-ci-controller
+sudo incus config set core.https_address=127.0.0.1:8443
+sudo cat /var/lib/incus/server.crt >"$credentials/server.crt"
+keytool -importcert -noprompt -alias incus -file "$credentials/server.crt" \
+    -keystore "$credentials/trust.p12" -storetype PKCS12 -storepass disposable-ci
+cat >"$credentials/java.args" <<ARGS
+-Djavax.net.ssl.keyStore=$credentials/client.p12
+-Djavax.net.ssl.keyStoreType=PKCS12
+-Djavax.net.ssl.keyStorePassword=disposable-ci
+-Djavax.net.ssl.trustStore=$credentials/trust.p12
+-Djavax.net.ssl.trustStoreType=PKCS12
+-Djavax.net.ssl.trustStorePassword=disposable-ci
+ARGS
+# Only the public image fingerprint belongs in the diagnostic artifact.
+sudo incus image list tend-ci-alpine --format=json | python3 -c \
+    'import json,sys; print(json.load(sys.stdin)[0]["fingerprint"])' >out/incus-smoke/fingerprint.txt

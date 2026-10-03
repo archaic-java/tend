@@ -41,7 +41,9 @@ jobs:
         run: bash scripts/incus-smoke/install
       - name: Provision disposable OVN network
         run: bash scripts/incus-smoke/prepare
-      - name: Verify real OVN ACL connectivity with Minau
+      - name: Authorize controller HTTPS client
+        run: bash scripts/incus-smoke/authenticate
+      - name: Verify real Incus reconciliation and OVN connectivity with Minau
         shell: bash
         run: |
           set -o pipefail
@@ -55,6 +57,7 @@ jobs:
           name: incus-smoke-${{ github.run_id }}-${{ github.run_attempt }}
           path: out/incus-smoke/
           retention-days: 7
+          # Credentials and controller state remain outside the uploaded directory.
       - name: Remove disposable test resources
         if: always()
         run: bash scripts/incus-smoke/cleanup
