@@ -22,7 +22,7 @@ hooks are needed. Assertions state observable expectations rather than duplicati
 | HTTPS/TLS | JDK java.net.http and JSSE | Operator-provisioned client identity and server trust |
 | JSON | Gson 2.14.0, com.google.gson | Explicit JsonObject tree access; no reflective domain serialization or opens |
 | Git | Installed git executable | Bounded, noninteractive ProcessBuilder commands; no shell interpolation |
-| Random secrets | SecureRandom and Base64 | Private files with atomic replacement; one writer |
+| Secrets | JDK SecureRandom, RSA and PBKDF2WithHmacSHA512 | Private files with atomic replacement; stable signing keys and derived client hashes; one writer |
 | Goals/logging | Catalog logging v02 with Peep | Explicit ServiceLoader selection in CLI only |
 | Tests | Catalog test v02 with Minau | HTTP and Git integration on loopback/local disk |
 | Mock server | JDK jdk.httpserver | Test module only |
@@ -76,7 +76,7 @@ Incus version and resolve any discrepancy against the real API rather than relax
 1. Review the named resource contract and its offline projection tests.
 2. Validate generated Caddy/Authelia configurations against pinned application versions, then add readiness, nested files and reload.
 3. Add explicit registry sources and safe image replacement with retained data.
-4. Add application-specific secret generation/derivation only when a consumer requires it.
+4. RSA-3072 signing keys and PBKDF2-SHA512 client-secret derivation now cover the homelab OIDC credentials. Test the real authorization-code exchange next.
 5. Extend the verified real-Incus CLI path to OCI bootstrap and generated application policies.
 
 Backup/export and any changes to the existing homelab remain outside this proof of concept.

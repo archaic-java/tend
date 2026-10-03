@@ -26,7 +26,10 @@ public final class StateReader {
         Set<String> secretNames = new HashSet<>();
         for (Element e : children(root, "secret")) {
             unique(secretNames, e.getAttribute("name"));
-            secrets.add(new Secret(e.getAttribute("name"), Integer.parseInt(e.getAttribute("bytes"))));
+            if (!e.getAttribute("kind").equals("random") && e.getAttributeNode("bytes").getSpecified())
+                throw new StateException("Only random secrets accept bytes");
+            secrets.add(new Secret(e.getAttribute("name"), Integer.parseInt(e.getAttribute("bytes")),
+                    e.getAttribute("kind"), e.getAttribute("source")));
         }
         var volumes = volumes(root, revision, secretNames);
         Set<String> volumeNames = new HashSet<>();

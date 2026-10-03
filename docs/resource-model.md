@@ -12,7 +12,7 @@ lowers them into Incus resources before mutation. Invalid references fail the wh
 | Pod/workload | `<instance>` with explicit `<device>` children | Incus instance, image fingerprint, config, devices, running/stopped state |
 | PersistentVolume | `<volume>` and a disk device | Named custom filesystem volume; retained when removed |
 | ConfigMap | `<configuration>` with Git file references; instance `<mount configuration="…">` | Per-consumer private volume and read-only disk; restarts consumer when content changes |
-| Secret | `<secret>`; instance `<mount secret="…">` | Controller-generated random value, private controller storage, private file on a read-only disk |
+| Secret | `<secret>`; instance `<mount secret="…">` | Controller-generated random value, RSA signing key or derived client hash; private controller storage, private file on a read-only disk |
 | Ingress plus authorization | `<ingress-gateway>` and `<ingress>` | Caddy host routes, Authelia forward authentication and group access rules |
 | Egress NetworkPolicy | `<egress instance="…" device="…">` | Incus network ACL attached to the declared OVN NIC |
 
@@ -37,7 +37,38 @@ After its normal Incus devices, an instance declares consumers:
 A secret is delivered as `value` within the mounted directory, here
 `/run/secrets/session/value`. Git contains the generator and reference, never the generated value.
 `bytes` means random bytes before URL-safe Base64 encoding. No implicit rotation occurs when
-parameters change. Imports, RSA keys, derived password hashes and backups/exports are later work.
+parameters change. Imports, rotation and backups/exports are later work.
+
+For OIDC credentials, declare a signing key and a hash of a shared random secret:
+
+```xml
+<secret name="oidc-signing" kind="rsa-3072"/>
+<secret name="webui-client-hash" kind="pbkdf2-sha512" source="webui-client"/>
+<secret name="webui-client" bytes="54"/>
+```
+
+`random` is the default kind; 54 random bytes produce 72 URL-safe Base64 characters.
+`rsa-3072` produces an unencrypted PKCS8 PEM key with exponent 65537.
+`pbkdf2-sha512` produces Authelia's modular hash format, with 310000 iterations, a random
+16-byte salt and a 64-byte derived key. These fixed parameters cover the current homelab.
+Only random secrets accept `bytes`; only hashes accept `source`. A hash source must be a
+declared random secret. Forward references work; hash chains and cycles are rejected.
+
+Mount `webui-client` in the application and `webui-client-hash` plus `oidc-signing` in Authelia
+using ordinary secret mounts. The same named value can have multiple consumers with different
+UID/GID. Authelia can read the hash and PEM through its native `template` filter and `secret`
+function; Tend does not substitute credentials into Git configuration or instance environment
+values. OIDC client registration and policy remain explicit application configuration.
+
+Keys and hashes persist on the controller volume. Typed storage metadata stays on that volume;
+consumers receive only the PEM or hash. Hash storage binds the source name and value, so changing
+a source or generator, or corrupting a stored key/hash, fails before Incus mutation. No implicit
+regeneration occurs. Preserve this directory across controller replacement.
+
+The offline suite checks real RSA signing, an independent PBKDF2 vector, shared delivery,
+controller process restart, Git activation, rejected changes and private failure diagnostics.
+The vector was also accepted by the pinned Authelia 4.39.28 CLI; a live OIDC exchange remains
+for the next integration slice.
 
 A configuration contains root-level files sourced from regular Git files. The mount owns UID,
 GID and mode for every file. Defaults are UID/GID 0 and mode 0400; explicitly use 0644 for a normal
@@ -91,7 +122,7 @@ Every change uses restart activation; reload hooks are deferred.
 This authorization protects requests through Caddy. It does not prevent clients reaching a backend
 IP directly. Network topology/firewall enforcement of that boundary needs its own validation.
 OIDC login in Grafana/Open WebUI is a distinct requirement: proxy authorization does not register
-OIDC clients, enforce their policies or generate their matching plaintext/hash credentials.
+OIDC clients or enforce their policies. Secret declarations can supply the matching raw/hash credentials.
 
 ## Egress
 
@@ -128,7 +159,7 @@ fingerprints, not a migration or a deployable reproduction of homelab. Current h
 include Caddy, Authelia, Grafana, Prometheus, llama, Open WebUI and pi. This model gives those
 applications configuration, credential references, HTTP entry points and network dependencies;
 it does not yet implement registry pulls, readiness, nested configuration trees, GPU validation,
-RSA generation, hash derivation, OIDC client generation or metrics-specific Caddy configuration.
+OIDC client configuration generation or metrics-specific Caddy configuration.
 
 Removal retains whole instances, volumes and ACLs. Removing mount/device entries from a retained
 instance detaches previously managed devices. Removing ingress entries while keeping the gateway
@@ -166,3 +197,5 @@ field drifts, Tend first invalidates consumer activation, deletes the managed fi
 it with the declared metadata. A failure between deletion and recreation leaves activation pending;
 the next pass restores the missing file before activating its consumer. This repair is not an
 atomic file replacement.
+
+OIDC secret formats: [Authelia client secrets](https://www.authelia.com/integration/openid-connect/frequently-asked-questions/), [signing keys](https://www.authelia.com/configuration/identity-providers/openid-connect/provider/).

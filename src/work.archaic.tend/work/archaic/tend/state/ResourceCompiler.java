@@ -11,6 +11,7 @@ public final class ResourceCompiler {
     public record Acl(String name, String network, JsonArray egress) {}
     public record Deployment(String project, List<Secret> secrets, List<Volume> volumes, List<Instance> instances, List<Acl> acls) {}
     public Deployment compile(DesiredState state) throws StateException {
+        validateSecrets(state.secrets());
         var instances = new LinkedHashMap<String, Instance>();
         state.instances().forEach(i -> instances.put(i.name(), i));
         for (var volume : state.volumes())
@@ -41,6 +42,24 @@ public final class ResourceCompiler {
             acls.add(new Acl(name, nic.get("network"), rules));
         }
         return new Deployment(state.project(), state.secrets(), List.copyOf(volumes), List.copyOf(instances.values()), List.copyOf(acls));
+    }
+    private static void validateSecrets(List<Secret> secrets) throws StateException {
+        Map<String, Secret> names = new HashMap<>();
+        for (var secret : secrets) {
+            if (!secret.name().matches("[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}") || names.putIfAbsent(secret.name(), secret) != null)
+                throw new StateException("Invalid or duplicate secret name");
+            if (!Set.of("random", "rsa-3072", "pbkdf2-sha512").contains(secret.kind()) || secret.bytes() < 32 || secret.bytes() > 128)
+                throw new StateException("Invalid secret generator");
+            if (!secret.kind().equals("random") && secret.bytes() != 32)
+                throw new StateException("Only random secrets accept bytes");
+            if (!secret.kind().equals("pbkdf2-sha512") && !secret.source().isEmpty())
+                throw new StateException("Only hashed secrets accept source");
+        }
+        for (var secret : secrets) if (secret.kind().equals("pbkdf2-sha512")) {
+            var source = names.get(secret.source());
+            if (source == null || !source.kind().equals("random"))
+                throw new StateException("Hashed secret requires a declared random source");
+        }
     }
     private Instance mounts(Instance instance, DesiredState state, List<Volume> volumes) throws StateException {
         var devices = new LinkedHashMap<>(instance.devices());
