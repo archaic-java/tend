@@ -24,6 +24,7 @@ final class IncusCommands {
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         Process process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(output.toFile()).start();
         try {
+            process.getOutputStream().close();
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) throw new IOException("Incus command timed out: " + output);
             return new Result(process.exitValue(), Files.readString(output));
         } finally {
