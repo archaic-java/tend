@@ -143,10 +143,12 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 login = browser.login("valid");
                 assert login.get("status").getAsInt() == 200 && login.get("ok").getAsBoolean() : "Stored passkey must survive an Authelia restart";
                 assert browser.request(incus, fixture).output().contains("user=carol") : "Restart must preserve authorized passkey identity";
+                authStarted = garden.started(AuthorizationFixture.AUTH);
                 garden.source("authelia.json", fixture.passkeyConfiguration().replace("\"info\"", "\"warn\""));
                 String updated = garden.commitXml(fixture.xml("admins"), "Change managed Authelia configuration after passkey enrollment");
                 garden.reconcile(); fixture.ready(); browser.clearSession();
                 assert garden.lastSuccess().equals(updated) : "Tend must activate the next passkey configuration revision";
+                assert !garden.started(AuthorizationFixture.AUTH).equals(authStarted) : "Changed Git configuration must actually restart Authelia before checking credential persistence";
                 login = browser.login("valid");
                 assert login.get("status").getAsInt() == 200 && login.get("ok").getAsBoolean() : "Stored passkey must survive Git-driven configuration activation";
                 assert browser.request(incus, fixture).output().contains("status=200") : "Git activation must preserve permitted passkey access";

@@ -111,10 +111,10 @@ final class PasskeyBrowser implements AutoCloseable {
     }
     int startElevation() throws Exception { return evaluate("tendProbe.elevation()").getAsInt(); }
     int finishElevation() throws Exception {
-        // Pull privately rather than using IncusCommands, whose output is uploaded as evidence.
+        // Read privately rather than using IncusCommands, whose output is uploaded as evidence.
         Path notification = directory.resolve("notification.txt");
-        var pull = new ProcessBuilder("sudo", "-n", "incus", "file", "pull", AuthorizationFixture.AUTH + "/var/lib/authelia/notifications.txt", notification.toString())
-                .redirectErrorStream(true).redirectOutput(directory.resolve("pull.log").toFile()).start();
+        var pull = new ProcessBuilder("sudo", "-n", "incus", "exec", AuthorizationFixture.AUTH, "--", "cat", "/var/lib/authelia/notifications.txt")
+                .redirectErrorStream(true).redirectOutput(notification.toFile()).start();
         pull.getOutputStream().close();
         try {
             if (!pull.waitFor(10, TimeUnit.SECONDS) || pull.exitValue() != 0) throw new IOException("Cannot read private enrollment notification");
