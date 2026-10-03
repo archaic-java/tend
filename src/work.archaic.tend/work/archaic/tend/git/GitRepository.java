@@ -33,12 +33,12 @@ public final class GitRepository {
         public byte[] read(String path) throws IOException, InterruptedException {
             if (path.isBlank() || path.startsWith("/") || path.contains("\\") ||
                     Arrays.asList(path.split("/", -1)).stream().anyMatch(p -> p.equals("..") || p.isEmpty()))
-                throw new IOException("Invalid repository path");
+                throw new GitException("Invalid repository path");
             // Reject symlinks/submodules; git show reads their object, not their target.
             String entry = new String(command(repository, "ls-tree", commit, "--", path),
                     java.nio.charset.StandardCharsets.UTF_8);
             if (!(entry.startsWith("100644 blob ") || entry.startsWith("100755 blob ")))
-                throw new IOException("Expected regular repository file: " + path);
+                throw new GitException("Expected regular repository file: " + path);
             return command(repository, "show", commit + ":" + path);
         }
     }
@@ -56,9 +56,9 @@ public final class GitRepository {
             builder.environment().put("GIT_TERMINAL_PROMPT", "0");
             process = builder.start();
             if (!process.waitFor(Duration.ofSeconds(30).toMillis(), TimeUnit.MILLISECONDS))
-                throw new IOException("Git operation timed out");
-            if (process.exitValue() != 0) throw new IOException("Git operation failed (exit " + process.exitValue() + ")");
-            if (Files.size(output) > 8 * 1024 * 1024) throw new IOException("Repository file exceeds 8 MiB");
+                throw new GitException("Git operation timed out");
+            if (process.exitValue() != 0) throw new GitException("Git operation failed (exit " + process.exitValue() + ")");
+            if (Files.size(output) > 8 * 1024 * 1024) throw new GitException("Repository file exceeds 8 MiB");
             return Files.readAllBytes(output);
         } finally {
             if (process != null && process.isAlive()) { process.destroyForcibly(); process.waitFor(); }

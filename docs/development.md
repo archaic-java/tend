@@ -3,7 +3,9 @@
 ## Architecture
 
 One production module, `work.archaic.tend`, contains small packages for Git, XML state, Incus HTTP
-and private secret persistence. `Reconciler` executes one serialized convergence pass. `Main`
+and private secret persistence. `ResourceCompiler` lowers named application requirements into an Incus deployment plan.
+`Reconciler` preflights that plan; `Volumes`, `Instances` and `NetworkPolicies` converge their
+respective resources in one serialized pass. `Main`
 composes adapters, selects logging v02 providers through ServiceLoader and wraps complete attempts
 in the `tend.reconcile` Goal. Polling is a thin loop around that pass. There is no public provider
 contract for internal implementation boundaries.
@@ -49,6 +51,7 @@ The mock implements only the endpoints currently used:
 - GET/POST custom volume files with raw bytes and X-Incus UID/GID/mode/type/write headers.
 - GET/POST/PUT instances with configuration, named devices and explicit empty profiles.
 - GET/PUT instance state.
+- GET managed network properties; GET/POST/PUT network ACLs.
 - GET operation wait, including nonterminal and failed operation status.
 
 Resource GETs include ETags; stale conditional PUTs fail with HTTP 412. Mutations return synchronous
@@ -70,10 +73,19 @@ Incus version and resolve any discrepancy against the real API rather than relax
 
 ## Follow-up sequence
 
-1. Run the existing offline slice in CI; review XML and update semantics.
-2. Extend observed-state tests for actual homelab requirements: nested files, readiness and Caddy reload.
+1. Review the named resource contract and its offline projection tests.
+2. Validate generated Caddy/Authelia configurations against pinned application versions, then add readiness, nested files and reload.
 3. Add explicit registry sources and safe image replacement with retained data.
 4. Add application-specific secret generation/derivation only when a consumer requires it.
 5. Build and smoke-test the OCI image, then integrate with a disposable real Incus project when authorized.
 
 Backup/export and any changes to the existing homelab remain outside this proof of concept.
+
+## Review conventions
+
+CLI mode selection uses a switch. Reconciliation and mock HTTP dispatch use small named methods
+rather than deeply nested branches. Expected XML, Git, secret, Incus and convergence failures have
+checked exception types; malformed library inputs are wrapped at their boundary. Watch retries
+only expected checked failures. Interruption escapes and programming defects are not swallowed.
+Each Minau scenario has its own named case record and run method; shared fixtures prepare adapters
+and resources without hiding assertions.

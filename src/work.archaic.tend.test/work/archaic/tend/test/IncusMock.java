@@ -39,80 +39,101 @@ final class IncusMock implements AutoCloseable {
     synchronized void seed(String path, JsonObject object) { resources.put(path, object.deepCopy()); }
     synchronized void drift(String path, String key, String value) { resources.get(path).getAsJsonObject("config").addProperty(key, value); nextEtag++; }
 
-    private synchronized void handle(HttpExchange x) throws IOException {
+    private synchronized void handle(HttpExchange exchange) throws IOException {
         try {
-            String method = x.getRequestMethod(), path = x.getRequestURI().getPath();
-            Map<String, String> query = query(x.getRequestURI().getRawQuery());
-            if (!"garden".equals(query.get("project"))) { error(x, 400); return; }
+            String method = exchange.getRequestMethod();
+            String path = exchange.getRequestURI().getPath();
+            var query = query(exchange.getRequestURI().getRawQuery());
+            if (!"garden".equals(query.get("project"))) { error(exchange, 400); return; }
             requests.add(method + " " + path);
-            if (failurePath != null && path.equals(failurePath)) { failurePath = null; error(x, 503); return; }
-            if (path.endsWith("/wait")) {
-                String op = path.substring(0, path.length() - 5);
-                Pending pending = operations.get(op);
-                if (pending == null) { error(x, 404); return; }
-                JsonObject status = new JsonObject();
-                if (stall) { status.addProperty("status_code", 103); }
-                else if (pending.failed()) { status.addProperty("status_code", 400); status.addProperty("err", "simulated failure"); }
-                else { if (pending.action() != null) { pending.action().run(); operations.put(op, new Pending(null, false)); } status.addProperty("status_code", 200); }
-                sync(x, status); return;
-            }
-            if (path.endsWith("/files")) { file(x, method, path, query.get("path")); return; }
-            if (path.endsWith("/state")) {
-                String instance = path.substring(0, path.length() - 6);
-                if (!resources.containsKey(instance)) { error(x, 404); return; }
-                if (method.equals("GET")) {
-                    JsonObject state = new JsonObject(); state.addProperty("status_code", running.getOrDefault(instance, false) ? 103 : 102);
-                    // Actual state observations need no ETag; conditional updates concern configuration.
-                    sync(x, state); return;
-                }
-                JsonObject body = body(x);
-                String action = body.get("action").getAsString();
-                if (!Set.of("start", "stop").contains(action) || body.get("force").getAsBoolean()) { error(x, 400); return; }
-                boolean failed = action.equals("start") && failStart;
-                if (action.equals("start")) failStart = false;
-                async(x, () -> { running.put(instance, action.equals("start")); if (action.equals("start")) starts++; }, failed);
-                return;
-            }
-            if (method.equals("GET")) {
-                JsonObject resource = resources.get(path);
-                if (resource == null) { error(x, 404); return; }
-                x.getResponseHeaders().set("ETag", etag()); sync(x, resource); return;
-            }
-            if (method.equals("PUT")) {
-                if (!resources.containsKey(path)) { error(x, 404); return; }
-                if (conflict) { conflict = false; nextEtag++; error(x, 412); return; }
-                if (!etag().equals(x.getRequestHeaders().getFirst("If-Match"))) { error(x, 412); return; }
-                JsonObject body = body(x);
-                if (path.startsWith("/1.0/instances/")) {
-                    if (body.has("source") || body.has("name") || body.has("type")) { error(x, 400); return; }
-                    async(x, () -> { body.entrySet().forEach(e -> resources.get(path).add(e.getKey(), e.getValue())); nextEtag++; }, false);
-                } else { body.entrySet().forEach(e -> resources.get(path).add(e.getKey(), e.getValue())); mutations++; nextEtag++; sync(x, new JsonObject()); }
-                return;
-            }
-            if (method.equals("POST")) {
-                JsonObject body = body(x);
-                String target = path + "/" + body.get("name").getAsString();
-                if (resources.containsKey(target)) { error(x, 409); return; }
-                if (path.equals("/1.0/instances")) {
-                    if (!body.getAsJsonObject("source").get("type").getAsString().equals("image") ||
-                            !body.getAsJsonObject("source").get("fingerprint").getAsString().matches("[a-f0-9]{64}") ||
-                            !body.getAsJsonArray("profiles").isEmpty() || body.get("start").getAsBoolean()) { error(x, 400); return; }
-                    async(x, () -> {
-                        JsonObject resource = body.deepCopy(); resource.remove("source"); resource.remove("start");
-                        resource.getAsJsonObject("config").addProperty("volatile.test", "preserve");
-                        resources.put(target, resource); running.put(target, false); nextEtag++;
-                    }, false);
-                } else if (path.endsWith("/volumes/custom")) {
-                    if (!body.get("type").getAsString().equals("custom") || !body.get("content_type").getAsString().equals("filesystem")) { error(x, 400); return; }
-                    resources.put(target, body); mutations++; nextEtag++;
-                    if (loseResponse) { loseResponse = false; x.close(); return; }
-                    sync(x, new JsonObject());
-                } else { error(x, 404); }
-                return;
-            }
-            error(x, 405);
-        } catch (RuntimeException e) { error(x, 400); }
-        finally { x.close(); }
+            if (path.equals(failurePath)) { failurePath = null; error(exchange, 503); return; }
+            dispatch(exchange, method, path, query);
+        } catch (JsonParseException | IllegalStateException | NullPointerException e) { error(exchange, 400); }
+        finally { exchange.close(); }
+    }
+    private void dispatch(HttpExchange x, String method, String path, Map<String, String> query) throws IOException {
+        if (path.endsWith("/wait")) { waitOperation(x, path); return; }
+        if (path.endsWith("/files")) { file(x, method, path, query.get("path")); return; }
+        if (path.endsWith("/state")) { state(x, method, path); return; }
+        switch (method) {
+            case "GET" -> get(x, path);
+            case "PUT" -> update(x, path);
+            case "POST" -> create(x, path);
+            default -> error(x, 405);
+        }
+    }
+    private void waitOperation(HttpExchange x, String path) throws IOException {
+        String op = path.substring(0, path.length() - 5);
+        Pending pending = operations.get(op);
+        if (pending == null) { error(x, 404); return; }
+        JsonObject status = new JsonObject();
+        if (stall) { status.addProperty("status_code", 103); sync(x, status); return; }
+        if (pending.failed()) { status.addProperty("status_code", 400); sync(x, status); return; }
+        if (pending.action() != null) { pending.action().run(); operations.put(op, new Pending(null, false)); }
+        status.addProperty("status_code", 200); sync(x, status);
+    }
+    private void state(HttpExchange x, String method, String path) throws IOException {
+        String instance = path.substring(0, path.length() - 6);
+        if (!resources.containsKey(instance)) { error(x, 404); return; }
+        if (method.equals("GET")) {
+            JsonObject state = new JsonObject(); state.addProperty("status_code", running.getOrDefault(instance, false) ? 103 : 102);
+            sync(x, state); return;
+        }
+        if (!method.equals("PUT")) { error(x, 405); return; }
+        var body = body(x);
+        String action = body.get("action").getAsString();
+        if (!Set.of("start", "stop").contains(action) || body.get("force").getAsBoolean()) { error(x, 400); return; }
+        boolean failed = action.equals("start") && failStart;
+        if (action.equals("start")) failStart = false;
+        async(x, () -> { running.put(instance, action.equals("start")); if (action.equals("start")) starts++; }, failed);
+    }
+    private void get(HttpExchange x, String path) throws IOException {
+        var resource = resources.get(path);
+        if (resource == null) { error(x, 404); return; }
+        x.getResponseHeaders().set("ETag", etag()); sync(x, resource);
+    }
+    private void update(HttpExchange x, String path) throws IOException {
+        if (!resources.containsKey(path)) { error(x, 404); return; }
+        if (conflict) { conflict = false; nextEtag++; error(x, 412); return; }
+        if (!etag().equals(x.getRequestHeaders().getFirst("If-Match"))) { error(x, 412); return; }
+        var body = body(x);
+        if (path.startsWith("/1.0/instances/")) {
+            if (body.has("source") || body.has("name") || body.has("type")) { error(x, 400); return; }
+            async(x, () -> merge(path, body), false); return;
+        }
+        if (path.startsWith("/1.0/network-acls/") && (!body.has("ingress") || !body.has("egress") || !body.has("config"))) { error(x, 400); return; }
+        merge(path, body); mutations++; sync(x, new JsonObject());
+    }
+    private void merge(String path, JsonObject body) {
+        body.entrySet().forEach(e -> resources.get(path).add(e.getKey(), e.getValue())); nextEtag++;
+    }
+    private void create(HttpExchange x, String path) throws IOException {
+        var body = body(x);
+        String target = path + "/" + body.get("name").getAsString();
+        if (resources.containsKey(target)) { error(x, 409); return; }
+        if (path.equals("/1.0/instances")) { createInstance(x, target, body); return; }
+        if (path.endsWith("/volumes/custom")) { createVolume(x, target, body); return; }
+        if (path.equals("/1.0/network-acls")) {
+            if (!body.has("ingress") || !body.has("egress") || !body.has("config")) { error(x, 400); return; }
+            resources.put(target, body); mutations++; nextEtag++; sync(x, new JsonObject()); return;
+        }
+        error(x, 404);
+    }
+    private void createInstance(HttpExchange x, String target, JsonObject body) throws IOException {
+        var source = body.getAsJsonObject("source");
+        if (!source.get("type").getAsString().equals("image") || !source.get("fingerprint").getAsString().matches("[a-f0-9]{64}") ||
+                !body.getAsJsonArray("profiles").isEmpty() || body.get("start").getAsBoolean()) { error(x, 400); return; }
+        async(x, () -> {
+            var resource = body.deepCopy(); resource.remove("source"); resource.remove("start");
+            resource.getAsJsonObject("config").addProperty("volatile.test", "preserve");
+            resources.put(target, resource); running.put(target, false); nextEtag++;
+        }, false);
+    }
+    private void createVolume(HttpExchange x, String target, JsonObject body) throws IOException {
+        if (!body.get("type").getAsString().equals("custom") || !body.get("content_type").getAsString().equals("filesystem")) { error(x, 400); return; }
+        resources.put(target, body); mutations++; nextEtag++;
+        if (loseResponse) { loseResponse = false; x.close(); return; }
+        sync(x, new JsonObject());
     }
     private void file(HttpExchange x, String method, String path, String file) throws IOException {
         String volume = path.substring(0, path.length() - 6);

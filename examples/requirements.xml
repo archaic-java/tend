@@ -1,0 +1,82 @@
+<?xml version='1.0' encoding='utf-8'?>
+<incus project="garden">
+  <secret name="session" bytes="32" />
+  <configuration name="demo-settings">
+    <file path="/service.conf" source="examples/service.conf" />
+  </configuration>
+  <volume pool="pool" name="demo-data">
+    <config>
+      <entry key="initial.mode" value="0700" />
+    </config>
+  </volume>
+  <instance name="demo" fingerprint="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">
+    <config>
+      <entry key="environment.DEMO" value="one" />
+    </config>
+    <device name="root" type="disk">
+      <config>
+        <entry key="path" value="/" />
+        <entry key="pool" value="pool" />
+      </config>
+    </device>
+    <device name="data" type="disk">
+      <config>
+        <entry key="path" value="/data" />
+        <entry key="pool" value="pool" />
+        <entry key="source" value="demo-data" />
+      </config>
+    </device>
+    <device name="eth0" type="nic">
+      <config>
+        <entry key="network" value="garden-net" />
+        <entry key="ipv4.address" value="10.20.0.10" />
+      </config>
+    </device>
+    <mount name="settings" configuration="demo-settings" pool="pool" path="/etc/demo" uid="1000" gid="1000" mode="0644" />
+    <mount name="session" secret="session" pool="pool" path="/run/secrets/session" uid="1000" gid="1000" mode="0400" />
+  </instance>
+  <instance name="caddy" fingerprint="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">
+    <device name="root" type="disk">
+      <config>
+        <entry key="path" value="/" />
+        <entry key="pool" value="pool" />
+      </config>
+    </device>
+    <device name="eth0" type="nic">
+      <config>
+        <entry key="network" value="garden-net" />
+        <entry key="ipv4.address" value="10.20.0.12" />
+      </config>
+    </device>
+  </instance>
+  <instance name="authelia" fingerprint="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">
+    <config>
+      <entry key="environment.X_AUTHELIA_CONFIG" value="/config/configuration.yml,/etc/tend-authorization/access-control.json" />
+    </config>
+    <device name="root" type="disk">
+      <config>
+        <entry key="path" value="/" />
+        <entry key="pool" value="pool" />
+      </config>
+    </device>
+    <device name="eth0" type="nic">
+      <config>
+        <entry key="network" value="garden-net" />
+        <entry key="ipv4.address" value="10.20.0.11" />
+      </config>
+    </device>
+  </instance>
+  <ingress-gateway instance="caddy" pool="pool" path="/etc/caddy" authorization-instance="authelia" authorization-device="eth0" authorization-path="/etc/tend-authorization" authorization-uid="1000" authorization-gid="1000" />
+  <ingress name="auth" host="auth.example.org" instance="authelia" device="eth0" port="9091">
+    <public />
+  </ingress>
+  <ingress name="demo" host="demo.example.org" instance="demo" device="eth0" port="8080">
+    <authorization policy="two_factor">
+      <group name="gardeners" />
+    </authorization>
+  </ingress>
+  <egress name="demo-outbound" instance="demo" device="eth0">
+    <allow address="10.20.0.11/32" protocol="tcp" port="9091" />
+    <allow address="10.20.0.1" protocol="udp" port="53" />
+  </egress>
+</incus>
