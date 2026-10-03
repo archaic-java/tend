@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Private synthetic accounts and a cached application image, confined to this disposable VM.
+set -euo pipefail
+[[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]]
+umask 077
+fixture=$(mktemp -d /tmp/tend-ci-authelia.XXXXXX)
+printf '%s\n' "$fixture" >out/incus-smoke/authelia-fixture-directory.txt
+curl -fsSL https://github.com/authelia/authelia/releases/download/v4.39.28/authelia-v4.39.28-linux-amd64-musl.tar.gz -o "$fixture/authelia.tar.gz"
+echo "ce2526b633ce3eec06680fae2f26060dc8cef3a92cdbc376410b28bcca6c97e1  $fixture/authelia.tar.gz" | sha256sum -c -
+tar -xzf "$fixture/authelia.tar.gz" -C "$fixture"
+sudo incus init tend-ci-alpine tend-ci-authelia-seed --no-profiles --storage tend-ci-pool
+sudo incus start tend-ci-authelia-seed
+sudo incus file push "$fixture/authelia" tend-ci-authelia-seed/usr/local/bin/authelia --mode=0755
+sudo incus exec tend-ci-authelia-seed -- /usr/local/bin/authelia --version >out/incus-smoke/authelia-version.txt
+# All generated credentials and their hash stay out of Actions logs and artifacts.
+sudo incus exec tend-ci-authelia-seed -- /usr/local/bin/authelia crypto hash generate argon2 --random --random.length 32 --random.charset alphanumeric >"$fixture/hash.txt"
+python3 - "$fixture" <<'PY'
+import json, pathlib, sys
+p=pathlib.Path(sys.argv[1])
+lines=p.joinpath('hash.txt').read_text().splitlines()
+password=next(x.removeprefix('Random Password: ') for x in lines if x.startswith('Random Password: '))
+digest=next(x.removeprefix('Digest: ') for x in lines if x.startswith('Digest: '))
+users={}
+for name,group in [('alice','gardeners'),('bob','observers'),('carol','admins')]:
+    users[name]=dict(displayname=name.title(),password=digest,email=name+'@example.invalid',groups=[group])
+    p.joinpath(name+'.json').write_text(json.dumps(dict(username=name,password=password,keepMeLoggedIn=False,targetURL='https://app.garden.internal/cgi-bin/probe')))
+p.joinpath('users.yml').write_text(json.dumps(dict(users=users)))
+p.joinpath('hash.txt').unlink()
+PY
+sudo incus exec tend-ci-authelia-seed -- mkdir -p /etc/authelia /var/lib/authelia
+sudo incus file push "$fixture/users.yml" tend-ci-authelia-seed/etc/authelia/users.yml --mode=0600
+sudo incus file push scripts/incus-smoke/authelia-service tend-ci-authelia-seed/etc/init.d/tend-authelia --mode=0755
+sudo incus exec tend-ci-authelia-seed -- rc-update add tend-authelia default
+sudo incus stop tend-ci-authelia-seed
+sudo incus publish tend-ci-authelia-seed --alias tend-ci-authelia
+sudo incus image info tend-ci-authelia | sed -n 's/^Fingerprint: //p' >out/incus-smoke/authelia-fingerprint.txt
+sudo incus delete tend-ci-authelia-seed
+rm "$fixture/authelia.tar.gz" "$fixture/authelia" "$fixture/users.yml"

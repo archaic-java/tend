@@ -2,7 +2,7 @@
 # Safe only within the explicitly disposable test environment.
 set -u
 [[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]] || exit 1
-for name in tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server tend-ci-gateway tend-ci-ingress-backend tend-ci-ingress-authorization tend-ci-ingress-client tend-ci-ingress-seed; do
+for name in tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server tend-ci-gateway tend-ci-ingress-backend tend-ci-ingress-authorization tend-ci-ingress-client tend-ci-ingress-seed tend-ci-auth-gateway tend-ci-auth-service tend-ci-auth-backend tend-ci-auth-client tend-ci-authelia-seed; do
     timeout 30 sudo incus delete "$name" --force || true
 done
 timeout 30 sudo incus network acl delete tend-ci-egress || true
@@ -27,7 +27,7 @@ for volume in json.load(sys.stdin):
 ' | while IFS= read -r volume; do
     timeout 30 sudo incus storage volume delete tend-ci-pool "$volume" || true
 done
-for image in tend-ci-caddy tend-ci-probe; do
+for image in tend-ci-caddy tend-ci-probe tend-ci-authelia; do
     timeout 30 sudo incus image delete "$image" || true
 done
 if [[ -f out/incus-smoke/client-fingerprint.txt ]]; then
@@ -36,5 +36,9 @@ fi
 if [[ -f out/incus-smoke/credentials-directory.txt ]]; then
     credentials=$(cat out/incus-smoke/credentials-directory.txt)
     [[ $credentials == /tmp/tend-ci-tls.* ]] && rm -rf -- "$credentials"
+fi
+if [[ -f out/incus-smoke/authelia-fixture-directory.txt ]]; then
+    fixture=$(cat out/incus-smoke/authelia-fixture-directory.txt)
+    [[ $fixture == /tmp/tend-ci-authelia.* ]] && rm -rf -- "$fixture"
 fi
 timeout 30 sudo incus storage delete tend-ci-pool || true

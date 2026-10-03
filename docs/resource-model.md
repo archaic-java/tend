@@ -139,7 +139,8 @@ secret rotation need an explicit later contract.
 Offline tests verify XML validation, resource projection, API requests, ownership, conditional
 updates, drift and failed-operation recovery. The separate real integration suite verifies Incus
 storage semantics, OVN packet filtering, Caddy startup and public-route TLS. Authelia startup and
-authorization still need real coverage before live use.
+one-factor proxy group authorization now have real coverage. Two-factor and OIDC application
+integration remain unverified.
 
 ## Authoritative adapter contracts
 

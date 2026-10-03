@@ -105,4 +105,6 @@ file volumes and retry after failed file recreation. A third case verifies XML e
 and ACL drift repair through actual packet probes. OCI deployment, generated ingress policy
 enforcement and secret delivery still need real integration coverage. A fourth case runs Caddy
 with generated public ingress, explicit local CA trust, Git backend changes, identity header
-stripping and live routing drift repair. Authelia startup and user authorization remain unverified.
+stripping and live routing drift repair. A fifth case exercises real Authelia startup,
+one-factor login, group authorization, identity forwarding, Git policy changes and live drift repair.
+Two-factor and OIDC application integration remain unverified.

@@ -62,6 +62,19 @@ routing. Unchanged passes must not restart the gateway, and its CA survives stop
 The authorization binding uses a stopped Alpine placeholder: this case has only public routes
 and does not test Authelia startup, login, group authorization, or public certificate issuance.
 
+The authorization case uses real Authelia 4.39.28, three synthetic users in distinct groups,
+and one-factor password login through the actual first-factor endpoint. Curl stores session cookies
+privately and uses verified HTTPS through a separate Caddy gateway. Anonymous requests redirect
+to login; authenticated outside-group users receive 403. Backend request logs prove denials never
+reach the application, and CGI responses verify Authelia identity replaces all forged headers.
+A new Git commit changes the allowed group; an operator alters the generated policy and restarts
+Authelia to prove undeclared access is live. The same desired revision must repair it. No-op passes
+must preserve both service start times and the active session. This case uses in-memory sessions,
+so it logs in again after policy activation restarts. It does not test two-factor or OIDC flows.
+Tend generates and mounts Authelia's session, storage and reset-password secrets. Passwords, hashes,
+cookies, user databases and secret bytes are never uploaded; private fixture accounts are cached
+only in a disposable local image and login bodies reside in a private temporary directory.
+
 The cases use different resources and evidence directories so concurrent Minau execution is safe.
 TLS keys, private Java arguments and controller state are outside the uploaded artifact. The test
 uses the normal JSSE client/trust stores and hostname verification; there is no TLS bypass.
@@ -82,6 +95,9 @@ uses the normal JSSE client/trust stores and hostname verification; there is no 
   records its image digest and package checksums, and installs them offline in Incus. OVN guests
   require no internet access. Caddy's private CA keys
   remain inside its disposable root disk; only its public root certificate is observed.
+- Authelia: official `authelia-v4.39.28-linux-amd64-musl.tar.gz`, SHA-256
+  `ce2526b633ce3eec06680fae2f26060dc8cef3a92cdbc376410b28bcca6c97e1`. Its CLI generates a
+  random private fixture password and Argon2 digest; login bodies and the user database stay private.
 - `dir` storage pool and IPv4-only test subnets: `10.77.0.0/24` for the uplink and `10.77.1.0/24`
   for the OVN network. A disposable VM must have no conflicting routes or existing `tend-ci-*`
   resources. Profile inheritance is disabled for the test instances.
@@ -108,6 +124,7 @@ javac @cmd/compile
 bash scripts/incus-smoke/install
 bash scripts/incus-smoke/prepare
 bash scripts/incus-smoke/prepare-ingress
+bash scripts/incus-smoke/prepare-authelia
 bash scripts/incus-smoke/authenticate
 java @cmd/incus-smoke
 bash scripts/incus-smoke/diagnostics

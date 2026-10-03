@@ -36,7 +36,9 @@ ACL rule without restarting the client.
 
 A fourth case runs real Caddy with Tend's generated configuration. It verifies HTTPS with explicit
 CA trust, public-route identity header stripping, backend changes through Git, and repair of live
-routing drift. Authelia authentication and authorization remain a separate milestone.
+routing drift. A fifth case runs Authelia with real password login and session cookies. It verifies group
+allow/deny decisions, anonymous redirects, trusted identity forwarding, Git policy changes and
+repair of independently activated authorization drift.
 
 The suite is separate from `cmd/test` and needs no homelab credentials or nested VMs. CI uploads
 command output, image fingerprint, package versions and Incus/OVN diagnostics on every run, then
@@ -74,7 +76,8 @@ homelab deployment tool.
 See [docs/resource-model.md](docs/resource-model.md) for XML, Kubernetes comparisons, enforcement
 boundaries and the remaining homelab requirements. Policy generation is tested offline; OVN
 packet filtering, Tend reconciliation and public Caddy HTTPS routing are verified on the CI runner.
-Authelia application startup and user authorization remain unverified.
+Authelia startup and one-factor proxy group authorization are verified; two-factor and OIDC
+application integration remain unverified.
 
 ## Run a controller
 

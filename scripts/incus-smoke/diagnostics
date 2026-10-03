@@ -33,7 +33,7 @@ fi
 capture managed sudo incus config show tend-ci-managed --expanded
 capture managed-state sudo incus info tend-ci-managed
 capture managed-volume sudo incus storage volume show tend-ci-pool tend-ci-data
-for name in gateway ingress-backend ingress-authorization ingress-client; do
+for name in gateway ingress-backend ingress-authorization ingress-client auth-gateway auth-service auth-backend auth-client; do
     capture "$name" sudo incus config show "tend-ci-$name" --expanded
     capture "$name-console" sudo incus console "tend-ci-$name" --show-log
     capture "$name-addresses" sudo incus exec "tend-ci-$name" -- /bin/busybox ip address
@@ -42,6 +42,12 @@ done
 capture caddy-log sudo incus exec tend-ci-gateway -- cat /var/log/tend-caddy.log
 capture caddyfile sudo incus exec tend-ci-gateway -- cat /etc/caddy/Caddyfile
 capture caddy-service sudo incus exec tend-ci-gateway -- rc-service tend-caddy status
+capture auth-caddy-log sudo incus exec tend-ci-auth-gateway -- cat /var/log/tend-caddy.log
+capture auth-caddyfile sudo incus exec tend-ci-auth-gateway -- cat /etc/caddy/Caddyfile
+capture authelia-log sudo incus exec tend-ci-auth-service -- cat /var/log/tend-authelia.log
+capture authelia-service sudo incus exec tend-ci-auth-service -- rc-service tend-authelia status
+capture access-control sudo incus exec tend-ci-auth-service -- cat /etc/tend-authorization/access-control.json
+# Never capture user databases, secret files, cookies, login bodies or private keys.
 capture volumes sudo incus storage volume list tend-ci-pool
 capture operations sudo incus operation list
 capture acl sudo incus network acl show tend-ci-egress
