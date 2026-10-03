@@ -21,6 +21,10 @@ The case verifies, in order:
 4. 8080 remains reachable while the negative test is performed.
 5. Detaching the ACL restores 8081, establishing that the ACL caused its failure.
 
+The NIC default actions are configured before instance start. In Incus, changing these defaults
+can recreate the NIC; assigning or removing `security.acls` supports an in-place update. This case
+isolates ACL attachment and filtering rather than guest recovery after NIC replacement.
+
 Probes use new TCP connections, bounded command timeouts and readiness polling. No ICMP/ping
 assumptions, public ingress, certificates or guest internet access are involved. Assertions are
 inline Java assertions run with `-ea`. This case proves environment provisioning and actual packet

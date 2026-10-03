@@ -24,7 +24,7 @@ record EgressAllowsOnePortAndRejectsAnother() implements TestCase {
         trail.note("Both server ports reachable before attaching ACL");
         applyPolicy(incus);
         var allowed = incus.reachable(8080);
-        assert allowed.status() == 0 && allowed.output().contains("tend-ovn-smoke") : "Declared destination port must remain reachable";
+        assert allowed.status() == 0 && allowed.output().contains("tend-ovn-smoke") : "Declared destination port must remain reachable: " + allowed.output();
         var blocked = incus.rejected(8081);
         assert blocked.status() == 1 && (blocked.output().contains("Connection refused") || blocked.output().contains("timed out")) : "Undeclared port must fail with a network rejection or timeout, not an exec error";
         trail.note("8080 allowed, 8081 rejected with ACL attached");
@@ -37,7 +37,8 @@ record EgressAllowsOnePortAndRejectsAnother() implements TestCase {
     }
     private static void prepareInstance(IncusCommands incus, String name, String address) throws java.io.IOException, InterruptedException {
         incus.require("init", "tend-ci-alpine", name, "--no-profiles", "--storage", "tend-ci-pool");
-        incus.require("config", "device", "add", name, "eth0", "nic", "network=tend-ci-ovn", "name=eth0", "ipv4.address=" + address);
+        incus.require("config", "device", "add", name, "eth0", "nic", "network=tend-ci-ovn", "name=eth0", "ipv4.address=" + address,
+                "security.acls.default.egress.action=reject", "security.acls.default.ingress.action=allow");
         incus.require("start", name);
         incus.require("file", "push", "/bin/busybox", name + "/root/busybox", "--mode=0755");
     }
@@ -45,7 +46,6 @@ record EgressAllowsOnePortAndRejectsAnother() implements TestCase {
         incus.require("network", "acl", "create", "tend-ci-egress");
         incus.require("network", "acl", "rule", "add", "tend-ci-egress", "egress", "action=allow", "state=enabled",
                 "destination=10.77.1.11/32", "protocol=tcp", "destination_port=8080");
-        incus.require("config", "device", "set", "tend-ci-client", "eth0", "security.acls=tend-ci-egress",
-                "security.acls.default.egress.action=reject", "security.acls.default.ingress.action=allow");
+        incus.require("config", "device", "set", "tend-ci-client", "eth0", "security.acls=tend-ci-egress");
     }
 }
