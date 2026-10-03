@@ -29,8 +29,7 @@ public final class Reconciler {
     public synchronized void reconcile(DesiredState state) throws IOException, InterruptedException {
         var desired = new ResourceCompiler().compile(state);
         preflight(desired);
-        Map<String, byte[]> values = new HashMap<>();
-        for (var secret : desired.secrets()) values.put(secret.name(), secrets.getOrCreate(secret.name(), secret.bytes()));
+        Map<String, byte[]> values = secrets.resolve(desired.secrets());
         policies.reconcile(desired.acls());
         var digests = volumes.reconcile(desired, values);
         // Authorization must activate before gateway routes can start referring to it.

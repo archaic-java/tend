@@ -35,6 +35,10 @@
         <xs:element name="secret" minOccurs="0" maxOccurs="unbounded">
           <xs:complexType>
             <xs:attribute name="name" type="name" use="required"/>
+            <xs:attribute name="kind" default="random"><xs:simpleType><xs:restriction base="xs:string">
+              <xs:enumeration value="random"/><xs:enumeration value="rsa-3072"/><xs:enumeration value="pbkdf2-sha512"/>
+            </xs:restriction></xs:simpleType></xs:attribute>
+            <xs:attribute name="source" type="name"/>
             <xs:attribute name="bytes" default="32">
               <xs:simpleType>
                 <xs:restriction base="xs:integer">

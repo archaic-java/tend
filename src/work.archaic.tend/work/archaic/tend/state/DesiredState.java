@@ -22,7 +22,9 @@ public record DesiredState(String project, List<Secret> secrets, List<Volume> vo
     public record Egress(String name, String instance, String device, List<Rule> rules) {
         public Egress { rules = List.copyOf(rules); }
     }
-    public record Secret(String name, int bytes) {}
+    public record Secret(String name, int bytes, String kind, String source) {
+        public Secret(String name, int bytes) { this(name, bytes, "random", ""); }
+    }
     public record File(String path, byte[] content, String secret, int uid, int gid, String mode) {
         public File { content = content == null ? null : content.clone(); }
         @Override public byte[] content() { return content == null ? null : content.clone(); }
