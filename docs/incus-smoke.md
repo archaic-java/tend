@@ -63,7 +63,8 @@ The authorization binding uses a stopped Alpine placeholder: this case has only 
 and does not test Authelia startup, login, group authorization, or public certificate issuance.
 
 The authorization case uses real Authelia 4.39.28, three synthetic users in distinct groups,
-and one-factor password login through the actual first-factor endpoint. Curl stores session cookies
+and one-factor password login through the actual first-factor endpoint. Its OpenRC entrypoint
+translates `X_AUTHELIA_CONFIG` to the binary's `--config` file list, as the OCI entrypoint does. Curl stores session cookies
 privately and uses verified HTTPS through a separate Caddy gateway. Anonymous requests redirect
 to login; authenticated outside-group users receive 403. Backend request logs prove denials never
 reach the application, and CGI responses verify Authelia identity replaces all forged headers.

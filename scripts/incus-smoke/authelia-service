@@ -1,6 +1,8 @@
 #!/sbin/openrc-run
 # X_AUTHELIA_CONFIG comes from Tend's instance declaration, including its generated policy last.
 command=/usr/local/bin/authelia
+# Like the OCI entrypoint, pass the declared file list to the binary explicitly.
+command_args="--config ${X_AUTHELIA_CONFIG:?Missing Tend configuration binding}"
 command_background=true
 pidfile=/run/tend-authelia.pid
 output_log=/var/log/tend-authelia.log
