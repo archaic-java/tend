@@ -73,7 +73,8 @@ A new Git commit changes the allowed group; an operator alters the generated pol
 Authelia to prove undeclared access is live. The same desired revision must repair it. No-op passes
 must preserve both service start times and the active session. This case uses in-memory sessions,
 so it logs in again after policy activation restarts. It does not test two-factor or OIDC flows.
-Tend generates and mounts Authelia's session, storage and reset-password secrets. Passwords, hashes,
+Tend generates and mounts Authelia's session, storage and reset-password secrets under `/etc`;
+Alpine's boot-time `/run` tmpfs would hide disks mounted below that directory. Passwords, hashes,
 cookies, user databases and secret bytes are never uploaded; private fixture accounts are cached
 only in a disposable local image and login bodies reside in a private temporary directory.
 

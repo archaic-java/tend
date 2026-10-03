@@ -115,15 +115,15 @@ final class AuthorizationFixture {
                 + instance(AUTH, authelia, "10.77.1.42", """
                   <config>
                     <entry key="environment.X_AUTHELIA_CONFIG" value="/etc/tend-base/configuration.json,/etc/tend-authorization/access-control.json"/>
-                    <entry key="environment.AUTHELIA_SESSION_SECRET_FILE" value="/run/tend-session/value"/>
-                    <entry key="environment.AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE" value="/run/tend-storage/value"/>
-                    <entry key="environment.AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE" value="/run/tend-reset/value"/>
+                    <entry key="environment.AUTHELIA_SESSION_SECRET_FILE" value="/etc/tend-session/value"/>
+                    <entry key="environment.AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE" value="/etc/tend-storage/value"/>
+                    <entry key="environment.AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE" value="/etc/tend-reset/value"/>
                   </config>
                 """, """
                   <mount name="base" configuration="authelia-base" pool="tend-ci-pool" path="/etc/tend-base" mode="0644"/>
-                  <mount name="session" secret="auth-session" pool="tend-ci-pool" path="/run/tend-session"/>
-                  <mount name="storage" secret="auth-storage" pool="tend-ci-pool" path="/run/tend-storage"/>
-                  <mount name="reset" secret="auth-reset" pool="tend-ci-pool" path="/run/tend-reset"/>
+                  <mount name="session" secret="auth-session" pool="tend-ci-pool" path="/etc/tend-session"/>
+                  <mount name="storage" secret="auth-storage" pool="tend-ci-pool" path="/etc/tend-storage"/>
+                  <mount name="reset" secret="auth-reset" pool="tend-ci-pool" path="/etc/tend-reset"/>
                 """)
                 + """
                   <ingress-gateway instance="tend-ci-auth-gateway" pool="tend-ci-pool" path="/etc/caddy" authorization-instance="tend-ci-auth-service" authorization-device="eth0" authorization-path="/etc/tend-authorization"/>
