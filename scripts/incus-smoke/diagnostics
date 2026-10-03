@@ -36,6 +36,8 @@ capture managed-volume sudo incus storage volume show tend-ci-pool tend-ci-data
 for name in gateway ingress-backend ingress-authorization ingress-client; do
     capture "$name" sudo incus config show "tend-ci-$name" --expanded
     capture "$name-console" sudo incus console "tend-ci-$name" --show-log
+    capture "$name-addresses" sudo incus exec "tend-ci-$name" -- /bin/busybox ip address
+    capture "$name-routes" sudo incus exec "tend-ci-$name" -- /bin/busybox ip route
 done
 capture caddy-log sudo incus exec tend-ci-gateway -- cat /var/log/tend-caddy.log
 capture caddyfile sudo incus exec tend-ci-gateway -- cat /etc/caddy/Caddyfile

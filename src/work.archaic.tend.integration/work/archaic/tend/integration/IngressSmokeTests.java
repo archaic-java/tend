@@ -31,7 +31,7 @@ record HttpsIngressChangesBackendAndRepairsConfiguration() implements TestCase {
             assert root.contains("BEGIN CERTIFICATE") : "Real Caddy must generate a local CA";
             Path ca = garden.directory.resolve("root.crt"); Files.writeString(ca, root);
             incus.require("file", "push", ca.toString(), CLIENT + "/root/caddy-ca.crt");
-            var untrusted = probe(incus, false, null);
+            var untrusted = untrusted(incus);
             assert untrusted.status() == 60 : "Client must reject Caddy's CA until explicitly trusted: " + untrusted.output();
             var one = reachable(incus, "backend-one");
             assert one.status() == 0 && one.output().contains("backend-one") && one.output().contains("status=200") : "Generated route must reach the first backend over verified HTTPS: " + one.output();
@@ -79,6 +79,16 @@ record HttpsIngressChangesBackendAndRepairsConfiguration() implements TestCase {
         for (String header : List.of("Remote-User", "Remote-Groups", "Remote-Email", "Remote-Name")) args.addAll(List.of("-H", header + ": forged"));
         args.add("https://" + HOST + "/cgi-bin/probe");
         return incus.run(Duration.ofSeconds(10), args.toArray(String[]::new));
+    }
+    private static IncusCommands.Result untrusted(IncusCommands incus) throws IOException, InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+        IncusCommands.Result result;
+        do {
+            result = probe(incus, false, null);
+            if (result.status() == 60 || result.status() == 0) return result;
+            Thread.sleep(Duration.ofMillis(300));
+        } while (System.nanoTime() < deadline);
+        return result;
     }
     private static IncusCommands.Result reachable(IncusCommands incus, String marker) throws IOException, InterruptedException {
         long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
