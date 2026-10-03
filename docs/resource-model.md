@@ -137,9 +137,9 @@ resources and must not be used as an authorization revocation procedure. Deletio
 secret rotation need an explicit later contract.
 
 Offline tests verify XML validation, resource projection, API requests, ownership, conditional
-updates, drift and failed-operation recovery. They do not prove Caddy/Authelia startup, TLS, actual
-packet filtering or Incus storage semantics. Before live use, validate generated configurations
-against pinned application versions and exercise the adapters in a disposable Incus project.
+updates, drift and failed-operation recovery. The separate real integration suite verifies Incus
+storage semantics, OVN packet filtering, Caddy startup and public-route TLS. Authelia startup and
+authorization still need real coverage before live use.
 
 ## Authoritative adapter contracts
 

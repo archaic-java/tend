@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Cached application fixtures only; Tend will create the gateway and render its configuration.
+set -euo pipefail
+[[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]]
+mkdir -p out/incus-smoke
+fixture=$(mktemp -d /tmp/tend-ci-caddy.XXXXXX)
+trap 'rm -rf -- "$fixture"' EXIT
+curl -fsSL https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.tar.gz -o "$fixture/caddy.tar.gz"
+echo "727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b  $fixture/caddy.tar.gz" | sha256sum -c -
+tar -xzf "$fixture/caddy.tar.gz" -C "$fixture" caddy
+sudo incus init tend-ci-alpine tend-ci-ingress-seed --no-profiles --storage tend-ci-pool
+sudo incus start tend-ci-ingress-seed
+# Fetch signed Alpine packages using the host network; OVN guests require no internet access.
+mkdir "$fixture/apks"
+timeout 120 docker run --rm --network host -v "$fixture/apks:/packages" alpine:3.22 \
+    sh -c 'apk update && apk fetch --recursive --output /packages curl'
+docker image inspect alpine:3.22 --format '{{json .RepoDigests}}' >out/incus-smoke/package-fetch-image.txt
+sha256sum "$fixture"/apks/*.apk >out/incus-smoke/curl-packages-sha256.txt
+sudo incus file push --recursive "$fixture/apks" tend-ci-ingress-seed/root/
+sudo incus exec tend-ci-ingress-seed -- sh -c 'apk add --no-network /root/apks/*.apk'
+sudo incus exec tend-ci-ingress-seed -- rm -rf /root/apks
+sudo incus exec tend-ci-ingress-seed -- apk info -v curl >out/incus-smoke/curl-package.txt
+sudo incus stop tend-ci-ingress-seed
+sudo incus publish tend-ci-ingress-seed --alias tend-ci-probe
+sudo incus start tend-ci-ingress-seed
+sudo incus file push "$fixture/caddy" tend-ci-ingress-seed/usr/local/bin/caddy --mode=0755
+sudo incus file push scripts/incus-smoke/caddy-service tend-ci-ingress-seed/etc/init.d/tend-caddy --mode=0755
+sudo incus exec tend-ci-ingress-seed -- rc-update add tend-caddy default
+sudo incus exec tend-ci-ingress-seed -- /usr/local/bin/caddy version >out/incus-smoke/caddy-version.txt
+sudo incus stop tend-ci-ingress-seed
+sudo incus publish tend-ci-ingress-seed --alias tend-ci-caddy
+sudo incus image info tend-ci-caddy >out/incus-smoke/caddy-image.txt
+sudo incus image info tend-ci-probe >out/incus-smoke/probe-image.txt
+sudo incus image info tend-ci-caddy | sed -n 's/^Fingerprint: //p' >out/incus-smoke/caddy-fingerprint.txt
+sudo incus delete tend-ci-ingress-seed

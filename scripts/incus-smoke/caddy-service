@@ -1,0 +1,11 @@
+#!/sbin/openrc-run
+# Run exactly the Tend-mounted Caddyfile on every container start.
+command=/usr/local/bin/caddy
+command_args="run --config /etc/caddy/Caddyfile --adapter caddyfile"
+command_background=true
+pidfile=/run/tend-caddy.pid
+output_log=/var/log/tend-caddy.log
+error_log=/var/log/tend-caddy.log
+export XDG_DATA_HOME=/var/lib/caddy
+export XDG_CONFIG_HOME=/var/lib/caddy-config
+depend() { need net; }

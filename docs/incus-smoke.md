@@ -48,6 +48,20 @@ the case first proves the forbidden port has reopened, then reruns Tend against 
 Git-driven lowering, real ACL API updates and packet-level drift repair. It does not certify
 arbitrary protocols, external networks, ingress authorization or IPv6.
 
+The public ingress case creates its gateway and backend through XML on Git `main`. A cached
+Alpine image runs checksum-pinned Caddy 2.11.7 via OpenRC against the generated read-only
+`/etc/caddy/Caddyfile`. An independent curl client reaches `app.tend.localhost` using `--resolve`.
+Caddy automatically issues a local certificate for `.localhost`; there is no public DNS or ACME.
+The client first rejects the untrusted certificate, then explicitly trusts the public root CA,
+keeping certificate and hostname verification enabled. Two CGI endpoints report distinct bodies
+and received identity headers. The case verifies that forged identity headers are stripped and
+an unknown HTTP Host returns Caddy's empty default response without adding a backend request. A new commit changes the backend port. It then
+alters the generated backing volume through the real HTTPS file API, reloads Caddy to prove the
+wrong route is live, and verifies that the same Git commit restores both file bytes and live
+routing. Unchanged passes must not restart the gateway, and its CA survives stop/start activation.
+The authorization binding uses a stopped Alpine placeholder: this case has only public routes
+and does not test Authelia startup, login, group authorization, or public certificate issuance.
+
 The cases use different resources and evidence directories so concurrent Minau execution is safe.
 TLS keys, private Java arguments and controller state are outside the uploaded artifact. The test
 uses the normal JSSE client/trust stores and hostname verification; there is no TLS bypass.
@@ -59,9 +73,15 @@ uses the normal JSSE client/trust stores and hostname verification; there is no 
   The signing key fingerprint is checked before installation. A missing pinned build fails the
   job; update the pin deliberately rather than silently selecting another release.
 - OVN, Open vSwitch and busybox-static: Ubuntu packages; exact installed versions are recorded.
-- Container image: `images:alpine/3.22`, resolved once and copied into the local image cache. All five
-  instances use that copy. This pins the OS release, not the rolling build; the full fingerprint
+- Container image: `images:alpine/3.22`, resolved once and copied into the local image cache. The basic cases use that copy; ingress fixtures derive cached images from it. This pins the OS release, not the rolling build; the full fingerprint
   and image information are retained in `image.txt` for each run.
+- Caddy: official `caddy_2.11.7_linux_amd64.tar.gz`, SHA-256
+  `727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b`. Bootstrap verifies the
+  archive, installs curl from Alpine 3.22, and records curl's version and derived image fingerprints.
+  Bootstrap fetches signed curl packages in `alpine:3.22` through the host Docker network,
+  records its image digest and package checksums, and installs them offline in Incus. OVN guests
+  require no internet access. Caddy's private CA keys
+  remain inside its disposable root disk; only its public root certificate is observed.
 - `dir` storage pool and IPv4-only test subnets: `10.77.0.0/24` for the uplink and `10.77.1.0/24`
   for the OVN network. A disposable VM must have no conflicting routes or existing `tend-ci-*`
   resources. Profile inheritance is disabled for the test instances.
@@ -77,7 +97,7 @@ needs no repository secrets, external Incus credentials or published test images
 These scripts install packages, change host network services and create/delete fixed-name Incus
 resources in the default project. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
 existing Incus host. The scripts require `TEND_DISPOSABLE_RUNNER=yes` as an explicit environment
-selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3 and working host internet access.
+selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3, Docker and working host internet access.
 
 From Tend's repository root:
 
@@ -87,6 +107,7 @@ sh scripts/prepare
 javac @cmd/compile
 bash scripts/incus-smoke/install
 bash scripts/incus-smoke/prepare
+bash scripts/incus-smoke/prepare-ingress
 bash scripts/incus-smoke/authenticate
 java @cmd/incus-smoke
 bash scripts/incus-smoke/diagnostics

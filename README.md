@@ -34,6 +34,10 @@ A third case exercises XML egress through Tend: it commits a port allowlist to `
 packet filtering, reverses the allowed port in a new commit, and repairs an independently added
 ACL rule without restarting the client.
 
+A fourth case runs real Caddy with Tend's generated configuration. It verifies HTTPS with explicit
+CA trust, public-route identity header stripping, backend changes through Git, and repair of live
+routing drift. Authelia authentication and authorization remain a separate milestone.
+
 The suite is separate from `cmd/test` and needs no homelab credentials or nested VMs. CI uploads
 command output, image fingerprint, package versions and Incus/OVN diagnostics on every run, then
 removes the test resources. See [docs/incus-smoke.md](docs/incus-smoke.md) for reproduction and scope.
@@ -69,7 +73,8 @@ homelab deployment tool.
 
 See [docs/resource-model.md](docs/resource-model.md) for XML, Kubernetes comparisons, enforcement
 boundaries and the remaining homelab requirements. Policy generation is tested offline; OVN
-packet filtering and basic Tend reconciliation are verified on the CI runner. Caddy/Authelia application startup remains unverified.
+packet filtering, Tend reconciliation and public Caddy HTTPS routing are verified on the CI runner.
+Authelia application startup and user authorization remain unverified.
 
 ## Run a controller
 

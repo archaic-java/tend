@@ -41,6 +41,8 @@ jobs:
         run: bash scripts/incus-smoke/install
       - name: Provision disposable OVN network
         run: bash scripts/incus-smoke/prepare
+      - name: Cache Caddy and HTTPS probe images
+        run: bash scripts/incus-smoke/prepare-ingress
       - name: Authorize controller HTTPS client
         run: bash scripts/incus-smoke/authenticate
       - name: Verify real Incus reconciliation and OVN connectivity with Minau

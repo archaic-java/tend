@@ -103,4 +103,6 @@ metadata, no-op passes without restarts, drift repair and a new revision. The mo
 preservation of metadata on file overwrite; offline cases cover rejection of unshifted managed
 file volumes and retry after failed file recreation. A third case verifies XML egress port changes
 and ACL drift repair through actual packet probes. OCI deployment, generated ingress policy
-enforcement, secret delivery and Caddy/Authelia still need real integration coverage.
+enforcement and secret delivery still need real integration coverage. A fourth case runs Caddy
+with generated public ingress, explicit local CA trust, Git backend changes, identity header
+stripping and live routing drift repair. Authelia startup and user authorization remain unverified.
