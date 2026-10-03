@@ -19,6 +19,7 @@ final class PasskeyBrowser implements AutoCloseable {
     private final BlockingQueue<JsonObject> responses = new LinkedBlockingQueue<>();
     private int sequence;
     private String authenticator;
+    private volatile String navigationEvidence = "no network events";
     PasskeyBrowser(IncusCommands incus, Path directory) throws Exception {
         this.directory = directory.resolve("browser");
         Files.createDirectory(this.directory);
@@ -67,12 +68,20 @@ final class PasskeyBrowser implements AutoCloseable {
                                 if (last) {
                                     var message = JsonParser.parseString(text.toString()).getAsJsonObject(); text.setLength(0);
                                     if (message.has("id")) responses.add(message);
+                                    else if (message.has("method")) {
+                                        String method = message.get("method").getAsString();
+                                        var parameters = message.getAsJsonObject("params");
+                                        if (method.equals("Network.loadingFailed")) navigationEvidence = "loadingFailed=" + parameters.get("errorText") + "; blocked=" + parameters.get("blockedReason") + "; canceled=" + parameters.get("canceled");
+                                        else if (method.equals("Security.certificateError")) navigationEvidence = "certificateError=" + parameters.get("errorType");
+                                    }
                                 }
                                 ws.request(1); return null;
                             }
                         }).get(10, TimeUnit.SECONDS);
                 call("Runtime.enable", new JsonObject());
                 call("Page.enable", new JsonObject());
+                call("Network.enable", new JsonObject());
+                call("Security.enable", new JsonObject());
                 call("WebAuthn.enable", JsonParser.parseString("{\"enableUI\":false}").getAsJsonObject());
                 JsonObject navigation = null;
                 for (int attempt = 0; attempt < 3; attempt++) {
@@ -81,7 +90,7 @@ final class PasskeyBrowser implements AutoCloseable {
                     Thread.sleep(300);
                 }
                 if (navigation.has("errorText")) throw new IOException("Browser HTTPS navigation failed: " + navigation.get("errorText").getAsString()
-                        + "; download=" + navigation.get("isDownload"));
+                        + "; download=" + navigation.get("isDownload") + "; " + navigationEvidence);
                 deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
                 while (!evaluate("location.origin === 'https://auth.garden.internal' && document.readyState === 'complete'").getAsBoolean()) {
                     if (System.nanoTime() > deadline) throw new IOException("Browser could not load verified gateway HTTPS: " + evaluate("({origin:location.origin,ready:document.readyState})"));
