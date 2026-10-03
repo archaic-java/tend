@@ -47,6 +47,11 @@ jobs:
         run: bash scripts/incus-smoke/prepare-authelia
       - name: Authorize controller HTTPS client
         run: bash scripts/incus-smoke/authenticate
+      - name: Prepare browser passkey probe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3-tools
+          google-chrome --version >out/incus-smoke/browser-version.txt
       - name: Verify real Incus reconciliation and OVN connectivity with Minau
         shell: bash
         run: |
