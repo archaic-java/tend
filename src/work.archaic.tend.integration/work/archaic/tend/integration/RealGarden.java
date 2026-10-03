@@ -12,7 +12,7 @@ final class RealGarden implements AutoCloseable {
     private final Path remote = directory.resolve("remote.git");
     private final Path state = directory.resolve("state");
     private final IncusCommands commands;
-    private final String fingerprint;
+    final String fingerprint;
     RealGarden(IncusCommands commands) throws IOException, InterruptedException {
         this.commands = commands;
         fingerprint = Files.readString(Path.of("out/incus-smoke/fingerprint.txt")).strip();
@@ -25,9 +25,12 @@ final class RealGarden implements AutoCloseable {
         git("remote", "add", "origin", remote.toString());
     }
     String commit(String version) throws IOException, InterruptedException {
-        Files.writeString(author.resolve("incus.xml"), xml(version));
         Files.writeString(author.resolve("service.conf"), "version=" + version + "\n");
-        git("add", "."); git("commit", "-m", "Desired state " + version); git("push", "origin", "main");
+        return commitXml(xml(version), "Desired state " + version);
+    }
+    String commitXml(String xml, String message) throws IOException, InterruptedException {
+        Files.writeString(author.resolve("incus.xml"), xml);
+        git("add", "."); git("commit", "-m", message); git("push", "origin", "main");
         return git("rev-parse", "HEAD").strip();
     }
     void reconcile() throws IOException, InterruptedException {
@@ -53,8 +56,9 @@ final class RealGarden implements AutoCloseable {
     String permissions() throws IOException, InterruptedException {
         return incus("exec", "tend-ci-managed", "--", "stat", "-c", "%u:%g:%a", "/data/service.conf").strip();
     }
-    String started() throws IOException, InterruptedException {
-        String stat = incus("exec", "tend-ci-managed", "--", "cat", "/proc/1/stat");
+    String started() throws IOException, InterruptedException { return started("tend-ci-managed"); }
+    String started(String instance) throws IOException, InterruptedException {
+        String stat = incus("exec", instance, "--", "cat", "/proc/1/stat");
         // Fields after the parenthesized command begin at field 3; start time is field 22.
         return stat.substring(stat.lastIndexOf(')') + 2).split("\\s+")[19];
     }

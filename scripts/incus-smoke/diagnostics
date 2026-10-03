@@ -21,10 +21,15 @@ capture ovn sudo incus network show tend-ci-ovn
 capture instances sudo incus list
 capture client sudo incus config show tend-ci-client --expanded
 capture server sudo incus config show tend-ci-server --expanded
-for name in client server; do
+for name in client server policy-client policy-server; do
     capture "$name-addresses" sudo incus exec "tend-ci-$name" -- /root/busybox ip address
     capture "$name-routes" sudo incus exec "tend-ci-$name" -- /root/busybox ip route
 done
+capture policy-client sudo incus config show tend-ci-policy-client --expanded
+capture policy-server sudo incus config show tend-ci-policy-server --expanded
+if [[ -f out/incus-smoke/egress-acl.txt ]]; then
+    capture policy-acl sudo incus network acl show "$(cat out/incus-smoke/egress-acl.txt)"
+fi
 capture managed sudo incus config show tend-ci-managed --expanded
 capture managed-state sudo incus info tend-ci-managed
 capture managed-volume sudo incus storage volume show tend-ci-pool tend-ci-data

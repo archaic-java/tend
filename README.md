@@ -30,6 +30,10 @@ A second Minau case invokes Tend’s CLI over authenticated HTTPS with a disposa
 It verifies creation of a running container and mounted configuration volume, file ownership and
 mode, no restart on an unchanged pass, drift repair, and deployment of the next commit on `main`.
 
+A third case exercises XML egress through Tend: it commits a port allowlist to `main`, verifies
+packet filtering, reverses the allowed port in a new commit, and repairs an independently added
+ACL rule without restarting the client.
+
 The suite is separate from `cmd/test` and needs no homelab credentials or nested VMs. CI uploads
 command output, image fingerprint, package versions and Incus/OVN diagnostics on every run, then
 removes the test resources. See [docs/incus-smoke.md](docs/incus-smoke.md) for reproduction and scope.
