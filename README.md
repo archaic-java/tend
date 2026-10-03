@@ -36,7 +36,9 @@ ACL rule without restarting the client.
 
 A fourth case runs real Caddy with Tend's generated configuration. It verifies HTTPS with explicit
 CA trust, public-route identity header stripping, backend changes through Git, and repair of live
-routing drift. A fifth case runs Authelia with real password login and session cookies. It verifies group
+routing drift.
+
+A fifth case runs Authelia with real password login and session cookies. It verifies group
 allow/deny decisions, anonymous redirects, trusted identity forwarding, Git policy changes and
 repair of independently activated authorization drift.
 

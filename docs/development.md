@@ -102,9 +102,9 @@ The second case invokes Tend's actual CLI over operator-authorized HTTPS, using 
 metadata, no-op passes without restarts, drift repair and a new revision. The mock mirrors Incus's
 preservation of metadata on file overwrite; offline cases cover rejection of unshifted managed
 file volumes and retry after failed file recreation. A third case verifies XML egress port changes
-and ACL drift repair through actual packet probes. OCI deployment, generated ingress policy
-enforcement and secret delivery still need real integration coverage. A fourth case runs Caddy
+and ACL drift repair through actual packet probes. A fourth case runs Caddy
 with generated public ingress, explicit local CA trust, Git backend changes, identity header
 stripping and live routing drift repair. A fifth case exercises real Authelia startup,
 one-factor login, group authorization, identity forwarding, Git policy changes and live drift repair.
-Two-factor and OIDC application integration remain unverified.
+It also verifies that Authelia can consume Tend-generated secrets through private file mounts.
+OCI controller deployment, two-factor and OIDC application integration remain unverified.
