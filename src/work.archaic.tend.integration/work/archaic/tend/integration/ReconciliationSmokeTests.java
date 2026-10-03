@@ -20,8 +20,10 @@ record MainConvergesRepairsDriftAndDeploysNewRevision() implements TestCase {
             assert garden.config("environment.DEMO").equals("one") : "Instance must receive Git configuration";
             assert garden.file().equals("version=one\n") : "Mounted file must contain Git bytes";
             assert garden.permissions().equals("1000:1000:640") : "Mounted file must have declared UID, GID and mode";
+            garden.recordObservedState();
             String started = garden.started();
             garden.reconcile();
+            garden.recordObservedState();
             assert garden.started().equals(started) : "An unchanged second pass must not restart the instance";
             trail.note("Initial main converged; unchanged pass did not restart the container");
 

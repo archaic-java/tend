@@ -9,7 +9,9 @@ timeout 30 sudo incus network acl delete tend-ci-egress || true
 timeout 30 sudo incus network delete tend-ci-ovn || true
 timeout 30 sudo incus network delete tend-ci-uplink || true
 timeout 30 sudo incus storage volume delete tend-ci-pool tend-ci-data || true
-timeout 30 sudo incus config trust remove tend-ci-controller || true
+if [[ -f out/incus-smoke/client-fingerprint.txt ]]; then
+    timeout 30 sudo incus config trust remove "$(cat out/incus-smoke/client-fingerprint.txt)" || true
+fi
 if [[ -f out/incus-smoke/credentials-directory.txt ]]; then
     credentials=$(cat out/incus-smoke/credentials-directory.txt)
     [[ $credentials == /tmp/tend-ci-tls.* ]] && rm -rf -- "$credentials"

@@ -11,6 +11,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
 openssl pkcs12 -export -name tend-ci-controller \
     -inkey "$credentials/client.key" -in "$credentials/client.crt" \
     -out "$credentials/client.p12" -passout pass:disposable-ci
+openssl x509 -in "$credentials/client.crt" -outform der | sha256sum | cut -d' ' -f1 >out/incus-smoke/client-fingerprint.txt
 sudo incus config trust add-certificate "$credentials/client.crt" --name tend-ci-controller
 sudo incus config set core.https_address=127.0.0.1:8443
 sudo cat /var/lib/incus/server.crt >"$credentials/server.crt"
