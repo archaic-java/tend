@@ -29,6 +29,7 @@ p.joinpath('hash.txt').unlink()
 PY
 sudo incus exec tend-ci-authelia-seed -- mkdir -p /etc/authelia /var/lib/authelia
 sudo incus file push "$fixture/users.yml" tend-ci-authelia-seed/etc/authelia/users.yml --mode=0600
+sudo incus file push scripts/incus-smoke/authelia-entrypoint tend-ci-authelia-seed/usr/local/bin/tend-authelia-entrypoint --mode=0755
 sudo incus file push scripts/incus-smoke/authelia-service tend-ci-authelia-seed/etc/init.d/tend-authelia --mode=0755
 sudo incus exec tend-ci-authelia-seed -- rc-update add tend-authelia default
 sudo incus stop tend-ci-authelia-seed

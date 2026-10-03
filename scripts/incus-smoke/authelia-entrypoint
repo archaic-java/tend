@@ -1,0 +1,11 @@
+#!/bin/sh
+# OpenRC clears the service environment. Restore only Incus's declared file-path bindings.
+set -efu
+IFS='
+'
+for binding in $(tr '\000' '\n' </proc/1/environ); do
+    case "$binding" in
+        X_AUTHELIA_CONFIG=*|AUTHELIA_*_FILE=*) export "$binding" ;;
+    esac
+done
+exec /usr/local/bin/authelia --config "${X_AUTHELIA_CONFIG:?Missing Tend configuration binding}"
