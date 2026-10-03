@@ -24,6 +24,7 @@ final class IncusCommands {
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         Process process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(output.toFile()).start();
         try {
+            // Incus reads nonterminal stdin as configuration; signal that no input follows.
             process.getOutputStream().close();
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) throw new IOException("Incus command timed out: " + output);
             return new Result(process.exitValue(), Files.readString(output));
@@ -36,7 +37,7 @@ final class IncusCommands {
         if (result.status() != 0) throw new IOException("Incus command failed: " + result.output());
     }
     Result request(int port) throws IOException, InterruptedException {
-        return run(Duration.ofSeconds(8), "exec", "tend-ci-client", "--", "/root/probe", "wget", "-T", "2", "-O", "-",
+        return run(Duration.ofSeconds(8), "exec", "tend-ci-client", "--", "/root/busybox", "wget", "-T", "2", "-O", "-",
                 "http://10.77.1.11:" + port + "/");
     }
     Result reachable(int port) throws IOException, InterruptedException {

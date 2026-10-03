@@ -15,8 +15,8 @@ record EgressAllowsOnePortAndRejectsAnother() implements TestCase {
         prepareInstance(incus, "tend-ci-client", "10.77.1.10");
         Path response = Path.of("out/incus-smoke/index.html"); Files.writeString(response, "tend-ovn-smoke\n");
         incus.require("file", "push", response.toString(), "tend-ci-server/root/index.html");
-        incus.require("exec", "tend-ci-server", "--", "/root/probe", "httpd", "-p", "8080", "-h", "/root");
-        incus.require("exec", "tend-ci-server", "--", "/root/probe", "httpd", "-p", "8081", "-h", "/root");
+        incus.require("exec", "tend-ci-server", "--", "/root/busybox", "httpd", "-p", "8080", "-h", "/root");
+        incus.require("exec", "tend-ci-server", "--", "/root/busybox", "httpd", "-p", "8081", "-h", "/root");
         var baselineAllowed = incus.reachable(8080);
         assert baselineAllowed.status() == 0 && baselineAllowed.output().contains("tend-ovn-smoke") : "Allowed port must work before filtering";
         var baselineBlocked = incus.reachable(8081);
@@ -39,7 +39,7 @@ record EgressAllowsOnePortAndRejectsAnother() implements TestCase {
         incus.require("init", "tend-ci-alpine", name, "--no-profiles", "--storage", "tend-ci-pool");
         incus.require("config", "device", "add", name, "eth0", "nic", "network=tend-ci-ovn", "name=eth0", "ipv4.address=" + address);
         incus.require("start", name);
-        incus.require("file", "push", "/bin/busybox", name + "/root/probe", "--mode=0755");
+        incus.require("file", "push", "/bin/busybox", name + "/root/busybox", "--mode=0755");
     }
     private static void applyPolicy(IncusCommands incus) throws java.io.IOException, InterruptedException {
         incus.require("network", "acl", "create", "tend-ci-egress");
