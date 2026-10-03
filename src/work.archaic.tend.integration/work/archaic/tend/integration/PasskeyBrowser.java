@@ -19,7 +19,7 @@ final class PasskeyBrowser implements AutoCloseable {
     private final BlockingQueue<JsonObject> responses = new LinkedBlockingQueue<>();
     private int sequence;
     private String authenticator;
-    private volatile String navigationEvidence = "no network events";
+    private final StringBuilder navigationEvidence = new StringBuilder();
     PasskeyBrowser(IncusCommands incus, Path directory) throws Exception {
         this.directory = directory.resolve("browser");
         Files.createDirectory(this.directory);
@@ -71,8 +71,15 @@ final class PasskeyBrowser implements AutoCloseable {
                                     else if (message.has("method")) {
                                         String method = message.get("method").getAsString();
                                         var parameters = message.getAsJsonObject("params");
-                                        if (method.equals("Network.loadingFailed")) navigationEvidence = "loadingFailed=" + parameters.get("errorText") + "; blocked=" + parameters.get("blockedReason") + "; canceled=" + parameters.get("canceled");
-                                        else if (method.equals("Security.certificateError")) navigationEvidence = "certificateError=" + parameters.get("errorType");
+                                        if (navigationEvidence.length() < 3000) {
+                                            if (method.equals("Network.loadingFailed")) navigationEvidence.append(" loadingFailed=").append(parameters.get("errorText")).append("; blocked=").append(parameters.get("blockedReason")).append("; canceled=").append(parameters.get("canceled"));
+                                            else if (method.equals("Security.certificateError")) navigationEvidence.append(" certificateError=").append(parameters.get("errorType"));
+                                            else if (method.equals("Network.responseReceived")) {
+                                                var response = parameters.getAsJsonObject("response");
+                                                navigationEvidence.append(" response=").append(parameters.get("type")).append(':').append(response.get("status")).append(':').append(response.get("mimeType"));
+                                            }
+                                            else if (method.equals("Page.frameRequestedNavigation")) navigationEvidence.append(" navigationReason=").append(parameters.get("reason"));
+                                        }
                                     }
                                 }
                                 ws.request(1); return null;
@@ -90,7 +97,8 @@ final class PasskeyBrowser implements AutoCloseable {
                     Thread.sleep(300);
                 }
                 if (navigation.has("errorText")) throw new IOException("Browser HTTPS navigation failed: " + navigation.get("errorText").getAsString()
-                        + "; download=" + navigation.get("isDownload") + "; " + navigationEvidence);
+                        + "; download=" + navigation.get("isDownload") + "; " + navigationEvidence
+                        + "; document=" + evaluate("({origin:location.origin,ready:document.readyState,title:document.title})"));
                 deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
                 while (!evaluate("location.origin === 'https://auth.garden.internal' && document.readyState === 'complete'").getAsBoolean()) {
                     if (System.nanoTime() > deadline) throw new IOException("Browser could not load verified gateway HTTPS: " + evaluate("({origin:location.origin,ready:document.readyState})"));
