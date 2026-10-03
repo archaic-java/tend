@@ -36,7 +36,7 @@ final class RealGarden implements AutoCloseable {
                 "@cmd/run", "once", remote.toString(), "https://127.0.0.1:8443", "default", "tend-ci-controller", state.toString());
     }
     void recordObservedState() throws IOException, InterruptedException {
-        incus("config", "show", "tend-ci-managed", "--format=json");
+        incus("config", "show", "tend-ci-managed");
         String credentials = Files.readString(Path.of("out/incus-smoke/credentials-directory.txt")).strip();
         command("curl", "-fsSI", "--cert", credentials + "/client.crt", "--key", credentials + "/client.key",
                 "--cacert", credentials + "/server.crt",
