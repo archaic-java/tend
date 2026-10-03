@@ -73,7 +73,28 @@ reach the application, and CGI responses verify Authelia identity replaces all f
 A new Git commit changes the allowed group; an operator alters the generated policy and restarts
 Authelia to prove undeclared access is live. The same desired revision must repair it. No-op passes
 must preserve both service start times and the active session. This case uses in-memory sessions,
-so it logs in again after policy activation restarts. It does not test two-factor or OIDC flows.
+so it logs in again after policy activation restarts.
+
+The same case then enables password-or-passkey login through a Git configuration commit.
+A headless Chromium browser uses CDP's virtual CTAP2 authenticator with resident keys and user
+verification. The test performs password login only for enrollment, verifies the real private
+filesystem-notifier code to elevate the session, obtains registration options from Authelia,
+and calls the browser's native `navigator.credentials.create`. After clearing cookies it calls
+`navigator.credentials.get` and the first-factor passkey endpoint without sending a password.
+It checks outside-group denial, permitted identity forwarding, server rejection of unknown
+credential IDs and signed assertions lacking required user verification, session stability on
+a no-op pass, and credential persistence after both an explicit restart and Git-driven
+configuration activation. Password login remains valid under `one_factor`; this does not
+enforce passkey-only access and does not use Authelia's experimental two-factor option.
+
+The gateway receives a test-only Incus proxy device listening on host loopback port 443, so
+Chromium can reach the OVN guest without a public listener. Host resolution maps the two
+fixture domains to loopback. Its public CA is imported into the disposable runner's NSS trust
+database; browser certificate and hostname checks remain enabled. CDP listens only on loopback,
+and its messages, browser profile, logs, enrollment notifications and cookie transfers stay
+in the private garden directory, which is removed even on test failure. The probe drives
+Authelia's HTTP contracts and native WebAuthn APIs, not UI selectors. It does not test physical
+authenticators, biometrics, passkey synchronization, two-factor or OIDC flows.
 Tend generates and mounts Authelia's session, storage and reset-password secrets under `/etc`;
 Alpine's boot-time `/run` tmpfs would hide disks mounted below that directory. Passwords, hashes,
 cookies, user databases and secret bytes are never uploaded; private fixture accounts are cached
@@ -102,6 +123,9 @@ uses the normal JSSE client/trust stores and hostname verification; there is no 
 - Authelia: official `authelia-v4.39.28-linux-amd64-musl.tar.gz`, SHA-256
   `ce2526b633ce3eec06680fae2f26060dc8cef3a92cdbc376410b28bcca6c97e1`. Its CLI generates a
   random private fixture password and Argon2 digest; login bodies and the user database stay private.
+- Browser: the GitHub Ubuntu runner's installed `google-chrome`, with its version recorded.
+  `libnss3-tools` supplies `certutil`; the JDK WebSocket/HTTP client and already-pinned Gson
+  drive CDP without a browser automation library or new controller dependency.
 - `dir` storage pool and IPv4-only test subnets: `10.77.0.0/24` for the uplink and `10.77.1.0/24`
   for the OVN network. A disposable VM must have no conflicting routes or existing `tend-ci-*`
   resources. Profile inheritance is disabled for the test instances.
@@ -117,7 +141,7 @@ needs no repository secrets, external Incus credentials or published test images
 These scripts install packages, change host network services and create/delete fixed-name Incus
 resources in the default project. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
 existing Incus host. The scripts require `TEND_DISPOSABLE_RUNNER=yes` as an explicit environment
-selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3, Docker and working host internet access.
+selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3, Docker, Google Chrome and working host internet access. Host loopback port 443 must be free.
 
 From Tend's repository root:
 
@@ -130,6 +154,8 @@ bash scripts/incus-smoke/prepare
 bash scripts/incus-smoke/prepare-ingress
 bash scripts/incus-smoke/prepare-authelia
 bash scripts/incus-smoke/authenticate
+sudo apt-get install -y libnss3-tools
+google-chrome --version >out/incus-smoke/browser-version.txt
 java @cmd/incus-smoke
 bash scripts/incus-smoke/diagnostics
 bash scripts/incus-smoke/cleanup

@@ -40,7 +40,10 @@ routing drift.
 
 A fifth case runs Authelia with real password login and session cookies. It verifies group
 allow/deny decisions, anonymous redirects, trusted identity forwarding, Git policy changes and
-repair of independently activated authorization drift.
+repair of independently activated authorization drift. It also enables passkeys from Git, enrolls
+discoverable credentials through Chromium WebAuthn, verifies passwordless login and failed
+assertions, and checks credential persistence across restart and Git activation. Password login
+remains supported under the explicit `one_factor` policy.
 
 The suite is separate from `cmd/test` and needs no homelab credentials or nested VMs. CI uploads
 command output, image fingerprint, package versions and Incus/OVN diagnostics on every run, then
