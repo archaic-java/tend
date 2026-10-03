@@ -1,0 +1,34 @@
+#!/bin/sh
+# Fetch explicit, pinned inputs. After preparation, compilation and tests are offline.
+set -eu
+cd "$(dirname "$0")/.."
+prepare_source() {
+    repository=$1
+    revision=$2
+    directory="../$repository"
+    if [ ! -d "$directory/.git" ]; then
+        git clone "https://github.com/archaic-java/$repository.git" "$directory"
+        git -C "$directory" checkout --detach "$revision"
+    fi
+    actual=$(git -C "$directory" rev-parse HEAD)
+    if [ "$actual" != "$revision" ]; then
+        printf '%s\n' "$directory must be at $revision (found $actual)" >&2
+        exit 1
+    fi
+}
+prepare_source service-catalog 8fcaa67657b27ebc71cb8165acf70659764821b2
+prepare_source minau 93bb952390b412fbaa38b2805bcf954fb6b5bd82
+prepare_source peep c196921d0a26937c4880ea716e9dd009ca0c5452
+mkdir -p lib/bin
+jar=lib/bin/gson-2.14.0.jar
+if [ ! -f "$jar" ]; then
+    temporary=$(mktemp lib/bin/gson.XXXXXX)
+    trap 'rm -f "$temporary"' EXIT HUP INT TERM
+    curl --retry 3 --retry-max-time 60 -fsSL https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.14.0/gson-2.14.0.jar -o "$temporary"
+    printf '%s  %s\n' 2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f "$temporary" | sha256sum -c -
+    mv "$temporary" "$jar"
+    trap - EXIT HUP INT TERM
+fi
+printf '%s  %s\n' 2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f "$jar" | sha256sum -c -
+chmod 0644 "$jar"
+jar --describe-module --file "$jar" --release 9

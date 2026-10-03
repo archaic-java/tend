@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Install only on a disposable VM explicitly dedicated to this smoke test.
+set -euo pipefail
+if [[ ${TEND_DISPOSABLE_RUNNER:-} != yes ]]; then
+    echo 'Set TEND_DISPOSABLE_RUNNER=yes only on a fresh disposable Ubuntu 24.04 VM.' >&2
+    exit 1
+fi
+source /etc/os-release
+if [[ $ID != ubuntu || $VERSION_ID != 24.04 ]]; then
+    echo 'This bootstrap requires Ubuntu 24.04.' >&2
+    exit 1
+fi
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://pkgs.zabbly.com/key.asc -o /tmp/tend-zabbly.asc
+fingerprint=$(gpg --show-keys --with-colons /tmp/tend-zabbly.asc | awk -F: '$1 == "fpr" {print $10; exit}')
+[[ $fingerprint == 4EFC590696CB15B87C73A3AD82CC8797C838DCFD ]]
+sudo install -m 0644 /tmp/tend-zabbly.asc /etc/apt/keyrings/tend-zabbly.asc
+sudo tee /etc/apt/sources.list.d/tend-incus.sources >/dev/null <<'SOURCES'
+Types: deb
+URIs: https://pkgs.zabbly.com/incus/stable
+Suites: noble
+Components: main
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/tend-zabbly.asc
+SOURCES
+# Both server and CLI use the same explicitly reviewed package build.
+incus_version=1:7.5.1-ubuntu24.04-202609271822
+sudo apt-get update
+sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    "incus=$incus_version" "incus-client=$incus_version" ovn-host ovn-central busybox-static
+sudo modprobe openvswitch
+sudo systemctl enable --now incus openvswitch-switch ovn-central ovn-host
+sudo incus admin waitready --timeout=60

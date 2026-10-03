@@ -1,0 +1,5 @@
+--release 25
+--module-source-path src:lib/src
+--module-path lib/bin
+--module work.archaic.tend.integration,work.archaic.tend,work.archaic.tend.test,work.archaic.service.catalog,work.archaic.minau,work.archaic.peep
+-d out

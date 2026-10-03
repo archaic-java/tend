@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='utf-8'?>
+<incus project="garden">
+  <secret name="session" bytes="32" />
+  <configuration name="demo-settings">
+    <file path="/service.conf" source="examples/service.conf" />
+  </configuration>
+  <volume pool="pool" name="demo-data">
+    <config>
+      <entry key="initial.mode" value="0700" />
+    </config>
+  </volume>
+  <instance name="demo" fingerprint="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">
+    <config>
+      <entry key="environment.DEMO" value="one" />
+    </config>
+    <device name="root" type="disk">
+      <config>
+        <entry key="path" value="/" />
+        <entry key="pool" value="pool" />
+      </config>
+    </device>
+    <device name="data" type="disk">
+      <config>
+        <entry key="path" value="/data" />
+        <entry key="pool" value="pool" />
+        <entry key="source" value="demo-data" />
+      </config>
+    </device>
+    <mount name="settings" configuration="demo-settings" pool="pool" path="/etc/demo" uid="1000" gid="1000" mode="0644" />
+    <mount name="session" secret="session" pool="pool" path="/run/secrets/session" uid="1000" gid="1000" mode="0400" />
+  </instance>
+</incus>

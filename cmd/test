@@ -1,0 +1,5 @@
+-ea
+--module-path out:lib/bin
+--add-modules work.archaic.tend.test
+-m work.archaic.minau/work.archaic.minau.Main
+work.archaic.tend.test
