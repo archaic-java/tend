@@ -55,7 +55,7 @@ Caddy automatically issues a local certificate for `.localhost`; there is no pub
 The client first rejects the untrusted certificate, then explicitly trusts the public root CA,
 keeping certificate and hostname verification enabled. Two CGI endpoints report distinct bodies
 and received identity headers. The case verifies that forged identity headers are stripped and
-an unknown HTTP Host does not reach the backend. A new commit changes the backend port. It then
+an unknown HTTP Host returns Caddy's empty default response without adding a backend request. A new commit changes the backend port. It then
 alters the generated backing volume through the real HTTPS file API, reloads Caddy to prove the
 wrong route is live, and verifies that the same Git commit restores both file bytes and live
 routing. Unchanged passes must not restart the gateway, and its CA survives stop/start activation.

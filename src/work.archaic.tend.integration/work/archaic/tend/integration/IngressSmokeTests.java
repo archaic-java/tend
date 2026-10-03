@@ -36,8 +36,10 @@ record HttpsIngressChangesBackendAndRepairsConfiguration() implements TestCase {
             var one = reachable(incus, "backend-one");
             assert one.status() == 0 && one.output().contains("backend-one") && one.output().contains("status=200") : "Generated route must reach the first backend over verified HTTPS: " + one.output();
             assert !one.output().contains("forged") : "Public ingress must strip all four supplied identity headers";
+            String requests = output(incus, "exec", BACKEND, "--", "cat", "/root/requests");
             var unknown = probe(incus, true, "unknown.tend.localhost");
-            assert unknown.status() == 0 && unknown.output().contains("status=404") && !unknown.output().contains("backend-") : "Unknown HTTP host must not fall through to the backend";
+            assert unknown.status() == 0 && unknown.output().strip().equals("status=200") : "Unknown HTTP host must return Caddy's empty default response: " + unknown.output();
+            assert output(incus, "exec", BACKEND, "--", "cat", "/root/requests").equals(requests) : "Unknown HTTP host must not send a request to the backend";
             String started = garden.started(GATEWAY);
             garden.reconcile();
             assert garden.started(GATEWAY).equals(started) : "Unchanged generated ingress must not restart Caddy";
@@ -130,6 +132,7 @@ record HttpsIngressChangesBackendAndRepairsConfiguration() implements TestCase {
             Path script = directory.resolve("probe-" + port);
             Files.writeString(script, """
                     #!/bin/sh
+                    printf '%%s\n' "${HTTP_HOST:-absent}" >>/root/requests
                     printf 'Content-Type: text/plain\r\n\r\nbackend-%s\n'
                     printf 'user=%%s groups=%%s email=%%s name=%%s\n' "${HTTP_REMOTE_USER:-absent}" "${HTTP_REMOTE_GROUPS:-absent}" "${HTTP_REMOTE_EMAIL:-absent}" "${HTTP_REMOTE_NAME:-absent}"
                     """.formatted(port == 8080 ? "one" : "two"));
