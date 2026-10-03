@@ -25,6 +25,10 @@ final class PasskeyBrowser implements AutoCloseable {
         incus.require("config", "device", "add", AuthorizationFixture.GATEWAY, "browser-probe", "proxy",
                 "listen=tcp:127.0.0.1:443", "connect=tcp:127.0.0.1:443");
         Path ca = directory.resolve("root.crt");
+        var proxy = incus.command(Duration.ofSeconds(10), List.of("curl", "--silent", "--show-error", "--noproxy", "*",
+                "--connect-timeout", "2", "--max-time", "8", "--cacert", ca.toString(), "--resolve", "auth.garden.internal:443:127.0.0.1",
+                "--output", "/dev/null", "--write-out", "%{http_code}", "https://auth.garden.internal/api/health"));
+        if (proxy.status() != 0 || !proxy.output().strip().equals("200")) throw new IOException("Loopback HTTPS proxy probe failed: " + proxy.output());
         Path nss = Path.of(System.getProperty("user.home"), ".pki/nssdb");
         Files.createDirectories(nss);
         if (!Files.exists(nss.resolve("cert9.db"))) {
@@ -65,10 +69,11 @@ final class PasskeyBrowser implements AutoCloseable {
                 call("Runtime.enable", new JsonObject());
                 call("Page.enable", new JsonObject());
                 call("WebAuthn.enable", JsonParser.parseString("{\"enableUI\":false}").getAsJsonObject());
-                call("Page.navigate", JsonParser.parseString("{\"url\":\"https://auth.garden.internal/\"}").getAsJsonObject());
+                var navigation = call("Page.navigate", JsonParser.parseString("{\"url\":\"https://auth.garden.internal/\"}").getAsJsonObject());
+                if (navigation.has("errorText")) throw new IOException("Browser HTTPS navigation failed: " + navigation.get("errorText").getAsString());
                 deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
                 while (!evaluate("location.origin === 'https://auth.garden.internal' && document.readyState === 'complete'").getAsBoolean()) {
-                    if (System.nanoTime() > deadline) throw new IOException("Browser could not load verified gateway HTTPS");
+                    if (System.nanoTime() > deadline) throw new IOException("Browser could not load verified gateway HTTPS: " + evaluate("({origin:location.origin,ready:document.readyState})"));
                     Thread.sleep(100);
                 }
                 evaluate(Files.readString(Path.of("scripts/incus-smoke/passkey-probe.js")));
