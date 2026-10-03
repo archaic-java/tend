@@ -2,7 +2,7 @@
 # Safe only within the explicitly disposable test environment.
 set -u
 [[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]] || exit 1
-for name in tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server; do
+for name in tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server tend-ci-gateway tend-ci-ingress-backend tend-ci-ingress-authorization tend-ci-ingress-client tend-ci-ingress-seed; do
     timeout 30 sudo incus delete "$name" --force || true
 done
 timeout 30 sudo incus network acl delete tend-ci-egress || true
@@ -18,6 +18,18 @@ done
 timeout 30 sudo incus network delete tend-ci-ovn || true
 timeout 30 sudo incus network delete tend-ci-uplink || true
 timeout 30 sudo incus storage volume delete tend-ci-pool tend-ci-data || true
+# Generated configuration volumes are retained by Tend; remove only this fixture owner's volumes.
+timeout 30 sudo incus storage volume list tend-ci-pool --format=json 2>/dev/null | python3 -c '
+import json,sys
+for volume in json.load(sys.stdin):
+    if volume.get("type") == "custom" and volume.get("config", {}).get("user.tend.owner") == "tend-ci-controller":
+        print(volume["name"])
+' | while IFS= read -r volume; do
+    timeout 30 sudo incus storage volume delete tend-ci-pool "$volume" || true
+done
+for image in tend-ci-caddy tend-ci-probe; do
+    timeout 30 sudo incus image delete "$image" || true
+done
 if [[ -f out/incus-smoke/client-fingerprint.txt ]]; then
     timeout 30 sudo incus config trust remove "$(cat out/incus-smoke/client-fingerprint.txt)" || true
 fi

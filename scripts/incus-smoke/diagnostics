@@ -33,6 +33,14 @@ fi
 capture managed sudo incus config show tend-ci-managed --expanded
 capture managed-state sudo incus info tend-ci-managed
 capture managed-volume sudo incus storage volume show tend-ci-pool tend-ci-data
+for name in gateway ingress-backend ingress-authorization ingress-client; do
+    capture "$name" sudo incus config show "tend-ci-$name" --expanded
+    capture "$name-console" sudo incus console "tend-ci-$name" --show-log
+done
+capture caddy-log sudo incus exec tend-ci-gateway -- cat /var/log/tend-caddy.log
+capture caddyfile sudo incus exec tend-ci-gateway -- cat /etc/caddy/Caddyfile
+capture caddy-service sudo incus exec tend-ci-gateway -- rc-service tend-caddy status
+capture volumes sudo incus storage volume list tend-ci-pool
 capture operations sudo incus operation list
 capture acl sudo incus network acl show tend-ci-egress
 capture client-console sudo incus console tend-ci-client --show-log
