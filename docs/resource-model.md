@@ -139,7 +139,9 @@ secret rotation need an explicit later contract.
 Offline tests verify XML validation, resource projection, API requests, ownership, conditional
 updates, drift and failed-operation recovery. The separate real integration suite verifies Incus
 storage semantics, OVN packet filtering, Caddy startup and public-route TLS. Authelia startup and
-one-factor proxy group authorization now have real coverage. Two-factor and OIDC application
+one-factor proxy group authorization through password and passkey login now have real coverage.
+The passkey fixture requires discoverability and user verification, but `one_factor` permits
+password login too; Tend does not enforce exclusive use of passkeys. Two-factor and OIDC application
 integration remain unverified.
 
 ## Authoritative adapter contracts

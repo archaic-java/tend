@@ -106,5 +106,8 @@ and ACL drift repair through actual packet probes. A fourth case runs Caddy
 with generated public ingress, explicit local CA trust, Git backend changes, identity header
 stripping and live routing drift repair. A fifth case exercises real Authelia startup,
 one-factor login, group authorization, identity forwarding, Git policy changes and live drift repair.
-It also verifies that Authelia can consume Tend-generated secrets through private file mounts.
+It also verifies that Authelia can consume Tend-generated secrets through private file mounts,
+and uses headless Chromium with a virtual authenticator to test passkey enrollment, passwordless
+one-factor login, rejected assertions and credential persistence across activation. Browser
+automation uses JDK HTTP/WebSocket and the existing Gson module; no new controller dependency.
 OCI controller deployment, two-factor and OIDC application integration remain unverified.

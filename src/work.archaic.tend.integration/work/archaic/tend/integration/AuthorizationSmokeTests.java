@@ -90,6 +90,73 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
             garden.reconcile();
             assert garden.started(AuthorizationFixture.AUTH).equals(authStarted) && garden.started(AuthorizationFixture.GATEWAY).equals(gatewayStarted) : "Repaired authorization must settle without further restarts";
             System.out.println("Authorization smoke: real login enforces groups, replaces forged identity, activates Git policy changes and repairs live authorization drift.");
+
+            garden.source("authelia.json", fixture.passkeyConfiguration());
+            String passkeyRevision = garden.commitXml(fixture.xml("admins"), "Enable one-factor password or passkey login");
+            garden.reconcile(); fixture.ready();
+            assert garden.lastSuccess().equals(passkeyRevision) : "Tend must activate passkey settings from Git";
+            try (var browser = new PasskeyBrowser(incus, garden.directory)) {
+                browser.authenticator();
+                assert browser.password("bob") == 200 : "Outside-group user must password-authenticate for enrollment";
+                assert browser.startElevation() == 200 : "Enrollment must send a real identity-verification code";
+                assert browser.finishElevation() == 200 : "Enrollment must verify the private notifier code";
+                var enrolled = browser.register();
+                assert enrolled.get("options").getAsInt() == 200 && enrolled.get("stored").getAsInt() == 201 && enrolled.get("resident").getAsBoolean() : "Authelia must store a discoverable passkey through a real browser ceremony";
+                browser.clearSession();
+                var login = browser.login("valid");
+                assert login.get("status").getAsInt() == 200 && login.get("ok").getAsBoolean() : "Outside-group user must authenticate with only a passkey";
+                requests = fixture.requests();
+                var denied = browser.request(incus, fixture);
+                assert denied.status() == 0 && denied.output().contains("status=403") : "Passkey login must not bypass group authorization";
+                assert fixture.requests().equals(requests) : "Outside-group passkey session must never reach the backend";
+
+                browser.clearSession(); browser.authenticator();
+                assert browser.password("carol") == 200 : "Permitted user must password-authenticate for enrollment";
+                assert browser.startElevation() == 200 : "Permitted enrollment must request identity verification";
+                assert browser.finishElevation() == 200 : "Permitted enrollment must verify the delivered code";
+                enrolled = browser.register();
+                assert enrolled.get("stored").getAsInt() == 201 && enrolled.get("resident").getAsBoolean() : "Permitted user must enroll a discoverable passkey";
+                browser.clearSession();
+                login = browser.login("unknown");
+                assert login.get("stage").getAsString().equals("server") && login.get("status").getAsInt() == 403 : "Authelia must reject an assertion naming an unknown credential";
+                requests = fixture.requests();
+                denied = browser.request(incus, fixture);
+                assert denied.output().contains("status=302") && fixture.requests().equals(requests) : "Unknown credential must leave the client anonymous with no backend access";
+
+                browser.clearSession(); browser.verified(false);
+                login = browser.login("unverified");
+                assert login.get("stage").getAsString().equals("server") && login.get("status").getAsInt() == 403 : "Authelia must reject a signed assertion without required user verification";
+                denied = browser.request(incus, fixture);
+                assert denied.output().contains("status=302") && fixture.requests().equals(requests) : "Missing user verification must not create an authorized session";
+                browser.clearSession(); browser.verified(true);
+                login = browser.login("valid");
+                assert login.get("status").getAsInt() == 200 && login.get("ok").getAsBoolean() : "Fresh anonymous session must authenticate using only its enrolled passkey";
+                var permitted = browser.request(incus, fixture);
+                assert permitted.status() == 0 && permitted.output().contains("status=200") && permitted.output().contains("user=carol") && permitted.output().contains("groups=admins") && permitted.output().contains("email=carol@example.invalid") && permitted.output().contains("name=Carol") && !permitted.output().contains("forged") : "Passkey session must forward the real authorized identity";
+                authStarted = garden.started(AuthorizationFixture.AUTH);
+                gatewayStarted = garden.started(AuthorizationFixture.GATEWAY);
+                garden.reconcile();
+                assert garden.started(AuthorizationFixture.AUTH).equals(authStarted) && garden.started(AuthorizationFixture.GATEWAY).equals(gatewayStarted) : "No-op reconciliation must not restart passkey services";
+                assert browser.request(incus, fixture).output().contains("status=200") : "No-op reconciliation must preserve the passkey session";
+
+                incus.require("restart", AuthorizationFixture.AUTH); fixture.ready(); browser.clearSession();
+                login = browser.login("valid");
+                assert login.get("status").getAsInt() == 200 && login.get("ok").getAsBoolean() : "Stored passkey must survive an Authelia restart";
+                assert browser.request(incus, fixture).output().contains("user=carol") : "Restart must preserve authorized passkey identity";
+                garden.source("authelia.json", fixture.passkeyConfiguration().replace("\"info\"", "\"warn\""));
+                String updated = garden.commitXml(fixture.xml("admins"), "Change managed Authelia configuration after passkey enrollment");
+                garden.reconcile(); fixture.ready(); browser.clearSession();
+                assert garden.lastSuccess().equals(updated) : "Tend must activate the next passkey configuration revision";
+                login = browser.login("valid");
+                assert login.get("status").getAsInt() == 200 && login.get("ok").getAsBoolean() : "Stored passkey must survive Git-driven configuration activation";
+                assert browser.request(incus, fixture).output().contains("status=200") : "Git activation must preserve permitted passkey access";
+                var password = fixture.login("carol");
+                assert password.status() == 0 && password.output().strip().equals("200") : "Password login must remain supported alongside passkeys";
+                assert fixture.request("carol").output().contains("status=200") : "One-factor ingress must accept either supported login method";
+                trail.note("Browser passkey enrollment, passwordless login, group decisions, negative assertions and credential persistence verified");
+                System.out.println("Passkey smoke: real WebAuthn enrollment and passwordless login enforce groups and user verification; credentials survive restart and Git activation.");
+            }
+
         }
     }
 }

@@ -101,6 +101,9 @@ final class AuthorizationFixture {
                  "notifier":{"filesystem":{"filename":"/var/lib/authelia/notifications.txt"}}}
                 """;
     }
+    String passkeyConfiguration() {
+        return baseConfiguration().replace("\"log\":", "\"webauthn\":{\"enable_passkey_login\":true,\"attestation_conveyance_preference\":\"none\",\"selection_criteria\":{\"discoverability\":\"required\",\"user_verification\":\"required\"}},\"log\":");
+    }
     String xml(String group) throws IOException {
         String caddy = Files.readString(Path.of("out/incus-smoke/caddy-fingerprint.txt")).strip();
         String authelia = Files.readString(Path.of("out/incus-smoke/authelia-fingerprint.txt")).strip();
