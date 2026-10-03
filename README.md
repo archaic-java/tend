@@ -64,8 +64,8 @@ use a new backing volume when the file set changes, so removed files are detache
 homelab deployment tool.
 
 See [docs/resource-model.md](docs/resource-model.md) for XML, Kubernetes comparisons, enforcement
-boundaries and the remaining homelab requirements. Policy generation is tested offline; OVN packet filtering and basic Tend reconciliation are
-verified on the CI runner. Caddy/Authelia application startup remains unverified.
+boundaries and the remaining homelab requirements. Policy generation is tested offline; OVN
+packet filtering and basic Tend reconciliation are verified on the CI runner. Caddy/Authelia application startup remains unverified.
 
 ## Run a controller
 

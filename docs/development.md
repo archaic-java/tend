@@ -77,7 +77,7 @@ Incus version and resolve any discrepancy against the real API rather than relax
 2. Validate generated Caddy/Authelia configurations against pinned application versions, then add readiness, nested files and reload.
 3. Add explicit registry sources and safe image replacement with retained data.
 4. Add application-specific secret generation/derivation only when a consumer requires it.
-5. Build and smoke-test the OCI image, then integrate with a disposable real Incus project when authorized.
+5. Extend the verified real-Incus CLI path to OCI bootstrap and generated application policies.
 
 Backup/export and any changes to the existing homelab remain outside this proof of concept.
 
@@ -90,11 +90,16 @@ only expected checked failures. Interruption escapes and programming defects are
 Each Minau scenario has its own named case record and run method; shared fixtures prepare adapters
 and resources without hiding assertions.
 
-## Real-host environment gate
+## Real-host integration
 
 The separate `work.archaic.tend.integration` module uses Minau v02 and the real Incus CLI.
 `cmd/test` does not resolve or run it. `cmd/incus-smoke` selects it explicitly. Its first case
 proves the runner can provision unprivileged containers on OVN and enforce an egress ACL,
 including reachability before filtering and recovery after detaching the ACL. Shell scripts
 install/bootstrap and retain diagnostics before teardown. They never contact the homelab.
-This environment test does not yet run Tend's reconciler, its OCI deployment or Caddy/Authelia.
+The second case invokes Tend's actual CLI over operator-authorized HTTPS, using disposable Git
+`main` revisions and a volume with `security.shifted=true`. It verifies convergence, mounted file
+metadata, no-op passes without restarts, drift repair and a new revision. The mock mirrors Incus's
+preservation of metadata on file overwrite; offline cases cover rejection of unshifted managed
+file volumes and retry after failed file recreation. OCI deployment, generated policy enforcement,
+secret delivery and Caddy/Authelia still need real integration coverage.

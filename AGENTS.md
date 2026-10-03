@@ -7,4 +7,5 @@
 - Offline tests use no live Incus. The explicitly selected integration suite may use only a fresh disposable CI/test VM.
 - Keep the mock grounded in documented Incus HTTP contracts.
 - XML describes Incus resources. Add only capabilities required by the experimental digital-garden.
+- Volumes with managed files require security.shifted=true; generated file volumes enable it automatically.
 - Never log secrets. Keep ownership, retained volumes and failed-operation recovery explicit.

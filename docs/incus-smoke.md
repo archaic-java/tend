@@ -33,8 +33,8 @@ filtering; it does not prove OCI bootstrap, secret permissions, Caddy/Authelia s
 A separate reconciliation case runs the actual `once` CLI over HTTPS with an operator-authorized
 client certificate and a pinned server trust store. It authors XML and a configuration file in a
 disposable Git repository and pushes to a local bare `main`. The CLI creates a real custom volume
-with `security.shifted=true` and a running unprivileged container with empty profiles. The case checks mounted bytes, UID/GID and
-mode, ownership markers, no restart on an unchanged pass, repair of independently introduced config
+with `security.shifted=true` and a running unprivileged container with empty profiles. The case
+checks mounted bytes, UID/GID and mode, ownership markers, no restart on an unchanged pass, repair of independently introduced config
 and file/permission drift, preservation of unrelated operator configuration, and activation of a
 new `main` commit. It checks `last-success` against each published commit. This covers the core
 Git-to-Incus path, not the generated ingress/egress adapters or secret delivery.
@@ -50,7 +50,7 @@ uses the normal JSSE client/trust stores and hostname verification; there is no 
   The signing key fingerprint is checked before installation. A missing pinned build fails the
   job; update the pin deliberately rather than silently selecting another release.
 - OVN, Open vSwitch and busybox-static: Ubuntu packages; exact installed versions are recorded.
-- Container image: `images:alpine/3.22`, resolved once and copied into the local image cache. Both
+- Container image: `images:alpine/3.22`, resolved once and copied into the local image cache. All three
   instances use that copy. This pins the OS release, not the rolling build; the full fingerprint
   and image information are retained in `image.txt` for each run.
 - `dir` storage pool and IPv4-only test subnets: `10.77.0.0/24` for the uplink and `10.77.1.0/24`
