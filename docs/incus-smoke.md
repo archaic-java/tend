@@ -37,7 +37,16 @@ with `security.shifted=true` and a running unprivileged container with empty pro
 checks mounted bytes, UID/GID and mode, ownership markers, no restart on an unchanged pass, repair of independently introduced config
 and file/permission drift, preservation of unrelated operator configuration, and activation of a
 new `main` commit. It checks `last-success` against each published commit. This covers the core
-Git-to-Incus path, not the generated ingress/egress adapters or secret delivery.
+Git-to-Incus path, not generated ingress or secret delivery.
+
+The egress case starts an independent server with two HTTP ports and uses Tend to create its
+client from XML. Both ports must work before filtering. It then commits an `<egress>` allowing
+8080, runs the CLI and checks 8080 works while 8081 is rejected. A new `main` commit permits 8081
+instead, and the probes must reverse. An operator CLI call adds an undeclared 8080 allow rule;
+the case first proves the forbidden port has reopened, then reruns Tend against the same commit.
+8080 must be rejected again while 8081 remains available, with no client restart. This proves
+Git-driven lowering, real ACL API updates and packet-level drift repair. It does not certify
+arbitrary protocols, external networks, ingress authorization or IPv6.
 
 The cases use different resources and evidence directories so concurrent Minau execution is safe.
 TLS keys, private Java arguments and controller state are outside the uploaded artifact. The test
@@ -50,7 +59,7 @@ uses the normal JSSE client/trust stores and hostname verification; there is no 
   The signing key fingerprint is checked before installation. A missing pinned build fails the
   job; update the pin deliberately rather than silently selecting another release.
 - OVN, Open vSwitch and busybox-static: Ubuntu packages; exact installed versions are recorded.
-- Container image: `images:alpine/3.22`, resolved once and copied into the local image cache. All three
+- Container image: `images:alpine/3.22`, resolved once and copied into the local image cache. All five
   instances use that copy. This pins the OS release, not the rolling build; the full fingerprint
   and image information are retained in `image.txt` for each run.
 - `dir` storage pool and IPv4-only test subnets: `10.77.0.0/24` for the uplink and `10.77.1.0/24`

@@ -2,10 +2,19 @@
 # Safe only within the explicitly disposable test environment.
 set -u
 [[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]] || exit 1
-for name in tend-ci-client tend-ci-server tend-ci-managed; do
+for name in tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server; do
     timeout 30 sudo incus delete "$name" --force || true
 done
 timeout 30 sudo incus network acl delete tend-ci-egress || true
+# These generated ACLs belong only to disposable Tend fixtures, including partial deployments.
+timeout 30 sudo incus network acl list --format=json 2>/dev/null | python3 -c '
+import json,sys
+for acl in json.load(sys.stdin):
+    if acl.get("config", {}).get("user.tend.owner") == "tend-ci-controller":
+        print(acl["name"])
+' | while IFS= read -r acl; do
+    timeout 30 sudo incus network acl delete "$acl" || true
+done
 timeout 30 sudo incus network delete tend-ci-ovn || true
 timeout 30 sudo incus network delete tend-ci-uplink || true
 timeout 30 sudo incus storage volume delete tend-ci-pool tend-ci-data || true

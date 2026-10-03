@@ -41,25 +41,28 @@ final class IncusCommands {
         var result = run(Duration.ofSeconds(90), arguments);
         if (result.status() != 0) throw new IOException("Incus command failed: " + result.output());
     }
-    Result request(int port) throws IOException, InterruptedException {
-        return run(Duration.ofSeconds(8), "exec", "tend-ci-client", "--", "/root/busybox", "wget", "-T", "2", "-O", "-",
-                "http://10.77.1.11:" + port + "/");
+    Result request(int port) throws IOException, InterruptedException { return request("tend-ci-client", "10.77.1.11", port); }
+    Result request(String client, String address, int port) throws IOException, InterruptedException {
+        return run(Duration.ofSeconds(8), "exec", client, "--", "/root/busybox", "wget", "-T", "2", "-O", "-",
+                "http://" + address + ":" + port + "/");
     }
-    Result reachable(int port) throws IOException, InterruptedException {
+    Result reachable(int port) throws IOException, InterruptedException { return reachable("tend-ci-client", "10.77.1.11", port); }
+    Result reachable(String client, String address, int port) throws IOException, InterruptedException {
         long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
         Result result;
         do {
-            result = request(port);
+            result = request(client, address, port);
             if (result.status() == 0 && result.output().contains("tend-ovn-smoke")) return result;
             Thread.sleep(Duration.ofMillis(300));
         } while (System.nanoTime() < deadline);
         return result;
     }
-    Result rejected(int port) throws IOException, InterruptedException {
+    Result rejected(int port) throws IOException, InterruptedException { return rejected("tend-ci-client", "10.77.1.11", port); }
+    Result rejected(String client, String address, int port) throws IOException, InterruptedException {
         long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
         Result result;
         do {
-            result = request(port);
+            result = request(client, address, port);
             if (result.status() == 1 && (result.output().contains("Connection refused") || result.output().contains("timed out"))) return result;
             Thread.sleep(Duration.ofMillis(300));
         } while (System.nanoTime() < deadline);
