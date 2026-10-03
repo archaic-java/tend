@@ -78,7 +78,9 @@ uses the normal JSSE client/trust stores and hostname verification; there is no 
 - Caddy: official `caddy_2.11.7_linux_amd64.tar.gz`, SHA-256
   `727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b`. Bootstrap verifies the
   archive, installs curl from Alpine 3.22, and records curl's version and derived image fingerprints.
-  Guest internet is needed only for that bootstrap package installation. Caddy's private CA keys
+  Bootstrap fetches signed curl packages in `alpine:3.22` through the host Docker network,
+  records its image digest and package checksums, and installs them offline in Incus. OVN guests
+  require no internet access. Caddy's private CA keys
   remain inside its disposable root disk; only its public root certificate is observed.
 - `dir` storage pool and IPv4-only test subnets: `10.77.0.0/24` for the uplink and `10.77.1.0/24`
   for the OVN network. A disposable VM must have no conflicting routes or existing `tend-ci-*`
@@ -95,7 +97,7 @@ needs no repository secrets, external Incus credentials or published test images
 These scripts install packages, change host network services and create/delete fixed-name Incus
 resources in the default project. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
 existing Incus host. The scripts require `TEND_DISPOSABLE_RUNNER=yes` as an explicit environment
-selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3 and working host internet access.
+selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3, Docker and working host internet access.
 
 From Tend's repository root:
 
