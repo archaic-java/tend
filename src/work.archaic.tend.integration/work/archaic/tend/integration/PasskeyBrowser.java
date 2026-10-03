@@ -56,9 +56,22 @@ final class PasskeyBrowser implements AutoCloseable {
             int port = Integer.parseInt(Files.readAllLines(portFile).getFirst());
             http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
             {
-                var reply = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/json/list"))
-                        .timeout(Duration.ofSeconds(5)).build(), HttpResponse.BodyHandlers.ofString());
-                var page = JsonParser.parseString(reply.body()).getAsJsonArray().get(0).getAsJsonObject();
+                JsonObject page = null;
+                deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+                while (page == null) {
+                    var reply = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/json/list"))
+                            .timeout(Duration.ofSeconds(5)).build(), HttpResponse.BodyHandlers.ofString());
+                    for (var entry : JsonParser.parseString(reply.body()).getAsJsonArray()) {
+                        var target = entry.getAsJsonObject();
+                        if (target.get("type").getAsString().equals("page") && target.get("url").getAsString().equals("about:blank")) {
+                            page = target; break;
+                        }
+                    }
+                    if (page == null) {
+                        if (System.nanoTime() > deadline) throw new IOException("Browser did not expose its blank page target");
+                        Thread.sleep(100);
+                    }
+                }
                 socket = http.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(5))
                         .buildAsync(URI.create(page.get("webSocketDebuggerUrl").getAsString()), new WebSocket.Listener() {
                             private final StringBuilder text = new StringBuilder();
