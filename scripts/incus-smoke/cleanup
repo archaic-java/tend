@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Safe only within the explicitly disposable test environment.
+set -u
+[[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]] || exit 1
+for name in tend-ci-client tend-ci-server; do
+    timeout 30 sudo incus delete "$name" --force || true
+done
+timeout 30 sudo incus network acl delete tend-ci-egress || true
+timeout 30 sudo incus network delete tend-ci-ovn || true
+timeout 30 sudo incus network delete tend-ci-uplink || true
+timeout 30 sudo incus storage delete tend-ci-pool || true

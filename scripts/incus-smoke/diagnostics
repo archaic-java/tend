@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Best effort: retain evidence even when package installation or provisioning failed.
+set -u
+mkdir -p out/incus-smoke
+capture() {
+    name=$1; shift
+    timeout 30 "$@" >"out/incus-smoke/$name.txt" 2>&1 || true
+}
+capture services sudo systemctl status incus openvswitch-switch ovn-central ovn-host --no-pager
+capture journal sudo journalctl -u incus -u ovn-central -u ovn-host -u openvswitch-switch --no-pager -n 500
+capture addresses ip -details address
+capture routes ip route
+capture ovs sudo ovs-vsctl show
+capture ovn-northbound sudo ovn-nbctl show
+capture ovn-southbound sudo ovn-sbctl show
+capture networks sudo incus network list
+capture uplink sudo incus network show tend-ci-uplink
+capture ovn sudo incus network show tend-ci-ovn
+capture instances sudo incus list
+capture client sudo incus config show tend-ci-client --expanded
+capture server sudo incus config show tend-ci-server --expanded
+capture acl sudo incus network acl show tend-ci-egress
+capture client-console sudo incus console tend-ci-client --show-log
+capture server-console sudo incus console tend-ci-server --show-log
+capture nft sudo nft list ruleset
+capture iptables sudo iptables-save

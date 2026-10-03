@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Bootstrap prerequisites only. The Minau case creates instances and their ACL.
+set -euo pipefail
+[[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]]
+mkdir -p out/incus-smoke
+# Refuse accidental reuse instead of modifying existing resources.
+for name in tend-ci-uplink tend-ci-ovn; do
+    if sudo incus network show "$name" >/dev/null 2>&1; then
+        echo "Network $name already exists; use a fresh disposable VM." >&2
+        exit 1
+    fi
+done
+if sudo incus storage show tend-ci-pool >/dev/null 2>&1; then
+    echo 'Pool tend-ci-pool already exists; use a fresh disposable VM.' >&2
+    exit 1
+fi
+sudo ovs-vsctl set open_vswitch . \
+    external_ids:ovn-remote=unix:/run/ovn/ovnsb_db.sock \
+    external_ids:ovn-encap-type=geneve external_ids:ovn-encap-ip=127.0.0.1
+sudo incus config set network.ovn.northbound_connection unix:/run/ovn/ovnnb_db.sock
+sudo incus storage create tend-ci-pool dir
+sudo incus network create tend-ci-uplink --type=bridge \
+    ipv4.address=10.77.0.1/24 ipv4.nat=true ipv6.address=none \
+    ipv4.dhcp.ranges=10.77.0.2-10.77.0.99 ipv4.ovn.ranges=10.77.0.100-10.77.0.199
+sudo incus network create tend-ci-ovn --type=ovn network=tend-ci-uplink \
+    ipv4.address=10.77.1.1/24 ipv4.nat=true ipv6.address=none
+# Pin the OS release; resolve its rolling image once and record the exact fingerprint.
+sudo incus image copy images:alpine/3.22 local: --alias tend-ci-alpine
+sudo incus image info tend-ci-alpine >out/incus-smoke/image.txt
+dpkg-query -W incus incus-client ovn-host ovn-central openvswitch-switch busybox-static >out/incus-smoke/packages.txt
+uname -a >out/incus-smoke/kernel.txt

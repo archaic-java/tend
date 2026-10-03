@@ -2,7 +2,7 @@
 
 Tend keeps Incus resources aligned with XML committed to the `main` branch of a Git repository.
 The experimental state repository is [mitschwimmer/digital-garden](https://github.com/mitschwimmer/digital-garden).
-This first implementation is developed and tested without a live Incus server.
+Development uses offline fixtures; a separate CI smoke test provisions real Incus and OVN on a disposable GitHub runner.
 
 ## Build and verify
 
@@ -18,6 +18,17 @@ java @cmd/run --help
 Preparation needs internet access. Compilation and tests then run offline. Minau v02 runs isolated
 cases against a stateful HTTP Incus mock and real temporary bare Git repositories. No live Incus
 credentials or GitHub credentials are needed. Dependencies are listed in [docs/development.md](docs/development.md).
+
+## Real Incus provisioning smoke test
+
+The `incus-smoke` job installs pinned Incus directly on a fresh `ubuntu-24.04` GitHub runner,
+configures standalone OVN, and runs `java @cmd/incus-smoke` with Minau. Two unprivileged Alpine
+containers expose two HTTP ports. The test proves both work, attaches an egress ACL, verifies
+8080 is allowed and 8081 is rejected, then detaches the ACL and verifies 8081 works again.
+
+The suite is separate from `cmd/test` and needs no homelab credentials or nested VMs. CI uploads
+command output, image fingerprint, package versions and Incus/OVN diagnostics on every run, then
+removes the test resources. See [docs/incus-smoke.md](docs/incus-smoke.md) for reproduction and scope.
 
 ## Current resource contract
 

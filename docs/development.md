@@ -89,3 +89,12 @@ checked exception types; malformed library inputs are wrapped at their boundary.
 only expected checked failures. Interruption escapes and programming defects are not swallowed.
 Each Minau scenario has its own named case record and run method; shared fixtures prepare adapters
 and resources without hiding assertions.
+
+## Real-host environment gate
+
+The separate `work.archaic.tend.integration` module uses Minau v02 and the real Incus CLI.
+`cmd/test` does not resolve or run it. `cmd/incus-smoke` selects it explicitly. Its first case
+proves the runner can provision unprivileged containers on OVN and enforce an egress ACL,
+including reachability before filtering and recovery after detaching the ACL. Shell scripts
+install/bootstrap and retain diagnostics before teardown. They never contact the homelab.
+This environment test does not yet run Tend's reconciler, its OCI deployment or Caddy/Authelia.

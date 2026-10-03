@@ -2,6 +2,7 @@ name: Verify
 on:
   push:
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -23,3 +24,37 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -t tend:test .
       - run: docker run --rm tend:test --help
+  incus-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TEND_DISPOSABLE_RUNNER: 'yes'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Compile test modules
+        run: sh scripts/prepare && javac @cmd/compile
+      - name: Install pinned Incus and OVN
+        run: bash scripts/incus-smoke/install
+      - name: Provision disposable OVN network
+        run: bash scripts/incus-smoke/prepare
+      - name: Verify real OVN ACL connectivity with Minau
+        shell: bash
+        run: |
+          set -o pipefail
+          java @cmd/incus-smoke 2>&1 | tee out/incus-smoke/minau.txt
+      - name: Capture Incus and OVN diagnostics
+        if: always()
+        run: bash scripts/incus-smoke/diagnostics
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: incus-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: out/incus-smoke/
+          retention-days: 7
+      - name: Remove disposable test resources
+        if: always()
+        run: bash scripts/incus-smoke/cleanup
