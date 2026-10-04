@@ -27,7 +27,7 @@ SOURCES
 incus_version=1:7.5.1-ubuntu24.04-202609271822
 sudo apt-get update
 sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    "incus=$incus_version" "incus-client=$incus_version" ovn-host ovn-central busybox-static
+    "incus=$incus_version" "incus-base=$incus_version" "incus-client=$incus_version" ovn-host ovn-central busybox-static
 sudo modprobe openvswitch
 sudo systemctl enable --now incus openvswitch-switch ovn-central ovn-host
 sudo incus admin waitready --timeout=60
