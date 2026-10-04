@@ -306,3 +306,5 @@ must produce a failed CI job. Offline tests continue to use `java @cmd/test` ind
 - https://linuxcontainers.org/incus/docs/main/howto/network_acls/
 
 The minimal Open WebUI consumer block reuses the authorization fixture and its native Authelia OCI issuer. See [Open WebUI](openwebui.md) for its digest, issuer admission gate and private wrapper. Raw OAuth application/issuer logs are never uploaded.
+
+The native monitoring case also exercises the explicitly controlled CPU llama protocol fixture. It proves API/model selection and idle monitoring, not llama binary/weights/ROCm. See [llama commissioning](llama.md) for the required hardware gate.

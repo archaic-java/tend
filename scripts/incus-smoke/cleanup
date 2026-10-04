@@ -23,7 +23,7 @@ if [[ -f out/incus-smoke/controller-directory.txt ]]; then
         sudo rm -rf -- "$controller"
     fi
 fi
-for name in tend-ci-openwebui tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server tend-ci-gateway tend-ci-ingress-backend tend-ci-ingress-authorization tend-ci-ingress-client tend-ci-ingress-seed tend-ci-auth-gateway tend-ci-auth-service tend-ci-auth-backend tend-ci-auth-client tend-ci-authelia-seed tend-ci-grafana tend-ci-pi tend-ci-private-operator tend-ci-native-gateway tend-ci-native-auth tend-ci-native-backend tend-ci-native-client tend-ci-prometheus tend-ci-monitor-grafana; do
+for name in tend-ci-llama tend-ci-openwebui tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server tend-ci-gateway tend-ci-ingress-backend tend-ci-ingress-authorization tend-ci-ingress-client tend-ci-ingress-seed tend-ci-auth-gateway tend-ci-auth-service tend-ci-auth-backend tend-ci-auth-client tend-ci-authelia-seed tend-ci-grafana tend-ci-pi tend-ci-private-operator tend-ci-native-gateway tend-ci-native-auth tend-ci-native-backend tend-ci-native-client tend-ci-prometheus tend-ci-monitor-grafana; do
     timeout 30 sudo incus delete "$name" --force || true
 done
 timeout 30 sudo incus network acl delete tend-ci-egress || true

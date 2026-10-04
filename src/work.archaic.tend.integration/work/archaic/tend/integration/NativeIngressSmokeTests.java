@@ -108,6 +108,27 @@ record UpstreamIngressAndPrivateMetrics() implements TestCase {
             assert monitoring.adminIdentity().equals(adminIdentity) && monitoring.grafana("/api/dashboards/uid/homelab-incus").has("dashboard") : "Restart must preserve generated administrator identity and actual dashboard provisioning";
             assert monitoring.secretsExcluded() : "Metrics key and Grafana private credentials must stay out of command artifacts";
             trail.note("Actual Prometheus scraping, metrics-only verified TLS, Grafana datasource/dashboard/query and retained TSDB verified");
+
+            var llama = new LlamaFixture(incus, garden);
+            garden.source("prometheus.json", monitoring.configuration().replace("tiny-ci", "mimo"));
+            String llamaRevision = garden.commitXml(llama.xml(monitoring.xml()), "Add explicitly controlled CPU model protocol coverage");
+            garden.reconcile(); llama.ready();
+            assert garden.lastSuccess().equals(llamaRevision) : "Tend must activate controlled model fixture and real monitoring configuration";
+            var cacheIdentity = incus.run(Duration.ofSeconds(10), "exec", LlamaFixture.INSTANCE, "--", "stat", "-c", "%u:%g:%a", "/var/cache/llama", "/etc/llama/models.ini");
+            assert cacheIdentity.status() == 0 && cacheIdentity.output().strip().equals("1000:1000:750\n1000:1000:644") : "CPU fixture must exercise real writable-cache and read-only-config permissions";
+            assert llama.get("/v1/models").getAsJsonArray("data").size() == 2 : "Model discovery must preserve both public model IDs";
+            assert monitoring.target("llama", "down") && llama.get("/fixture").get("loads").getAsInt() == 0 : "Real Prometheus autoload=false scraping must not load an idle model";
+            var chat = llama.request("POST", "/v1/chat/completions", "{\"model\":\"mimo\",\"messages\":[{\"role\":\"user\",\"content\":\"synthetic OpenAI consumer probe\"}]}");
+            assert chat.status() == 0 && com.google.gson.JsonParser.parseString(chat.output()).getAsJsonObject().get("model").getAsString().equals("mimo") : "Representative OpenAI consumer request must select the intended model";
+            assert monitoring.target("llama", "up") && llama.get("/fixture").get("loads").getAsInt() == 1 : "Scraping the selected model must observe it without switching or loading another";
+            var stream = llama.request("POST", "/v1/chat/completions", "{\"model\":\"qwen36\",\"stream\":true,\"messages\":[]}");
+            assert stream.status() == 0 && stream.output().contains("qwen36") && stream.output().contains("data: [DONE]") : "Controlled streaming response must carry the selected model and terminate";
+            assert llama.get("/fixture").get("loads").getAsInt() == 2 && llama.get("/fixture").get("loaded").getAsString().equals("qwen36") : "Explicit model switching must be independent of idle scrape requests";
+            assert monitoring.target("llama", "down") && llama.get("/fixture").get("loads").getAsInt() == 2 : "Monitoring the now-idle previous model must never switch it back";
+            incus.require("restart", LlamaFixture.INSTANCE); llama.ready();
+            var retained = incus.run(Duration.ofSeconds(10), "exec", LlamaFixture.INSTANCE, "--", "test", "-f", "/var/cache/llama/mimo.synthetic-cache");
+            assert retained.status() == 0 && llama.get("/fixture").get("uid").getAsInt() == 1000 : "Cache files must persist across restart while the model process retains UID 1000";
+            trail.note("Controlled CPU protocol ONLY: model discovery/selection/streaming, persistent cache and real idle monitoring; no llama binary, downloaded weights or GPU inference");
         }
     }
 }

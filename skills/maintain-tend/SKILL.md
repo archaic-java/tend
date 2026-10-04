@@ -50,6 +50,8 @@ Use this entry point for both human contributors and coding agents.
 
 | Configure Open WebUI OIDC admission and wrapper | [Open WebUI](references/openwebui.md), [private inputs](references/private-inputs.md) | Existing AuthorizationSmokeTests consumer block; issuer ai-users gate, actual user endpoint and Git-authoritative settings. |
 
+| Configure llama.cpp and commission AMD hardware | [Llama](references/llama.md), [remote bootstrap](references/incusos-bootstrap.md) | Device/preset offline projection, controlled CPU protocol and explicit operator GPU acceptance. |
+
 ## Complete the change
 
 Keep command files and module descriptors aligned with code. Update the owning reference for

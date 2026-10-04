@@ -22,6 +22,7 @@ public record RequirementsTests() implements TestSuite {
         cases.add(new IngressProjection());
         cases.add(new PrivateGatewayMetrics());
         cases.add(new FlatMonitoringProvisioning());
+        cases.add(new LlamaDeviceProjection());
         cases.add(new IngressIdempotence());
         cases.add(new AuthorizationActivationFails());
         cases.add(new EgressProjection());
@@ -365,6 +366,28 @@ record FlatMonitoringProvisioning() implements TestCase {
             assert tls.has("server_name") && tls.has("ca_file") && tls.has("cert_file") && tls.has("key_file") && !tls.has("insecure_skip_verify") : "Incus scraping requires explicit server identity/trust and separate private client credentials";
             int mutations = f.mock.mutations; f.engine.reconcile(desired);
             assert f.mock.mutations == mutations && f.mock.resources.get("/1.0/storage-pools/pool/volumes/custom/incus-metrics").equals(privateConfig) : "Unchanged monitoring must settle while retaining operator-owned TLS";
+        }
+    }
+}
+
+record LlamaDeviceProjection() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (var f = new DeploymentFixture()) {
+            java.nio.file.Files.copy(java.nio.file.Path.of("examples/llama/models.ini"), f.garden.author.resolve("models.ini"));
+            String xml = java.nio.file.Files.readString(java.nio.file.Path.of("examples/llama/incus.xml"));
+            var desired = f.revision(xml, "llama"); f.engine.reconcile(desired);
+            var devices = f.mock.resources.get("/1.0/instances/llama").getAsJsonObject("devices");
+            assert devices.getAsJsonObject("gpu").get("pci").getAsString().equals("0000:03:00.0") && devices.getAsJsonObject("gpu").get("gputype").getAsString().equals("physical") : "GPU projection must bind only the selected physical PCI device";
+            assert devices.getAsJsonObject("kfd").get("source").getAsString().equals("/dev/kfd") && devices.getAsJsonObject("kfd").get("mode").getAsString().equals("0660") && devices.getAsJsonObject("kfd").get("uid").getAsString().equals("1000") : "KFD must be accessible to the declared consumer without world access";
+            var model = f.mock.files.entrySet().stream().filter(e -> e.getKey().endsWith("/models.ini")).findFirst().orElseThrow().getValue();
+            String text = new String(model.bytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assert model.uid().equals("1000") && model.gid().equals("1000") && model.mode().equals("0644") : "Read-only presets must be readable by UID 1000";
+            assert text.contains("[mimo]") && text.contains("MiMo-V2.6-Distill-Qwen-9B-Q5_K_M.gguf") && text.contains("ctx-size = 131072") && text.contains("no-mmproj = false") : "MiMo settings must match the audited baseline, including its literal projector flag";
+            assert text.contains("[qwen36]") && text.contains("Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf") && text.contains("ctx-size = 65536") && text.contains("spec-type = draft-mtp") && text.contains("spec-draft-n-max = 2") : "Qwen settings must retain context and MTP configuration";
+            var cache = f.mock.resources.get("/1.0/storage-pools/pool/volumes/custom/llama-cache").getAsJsonObject("config");
+            assert cache.get("initial.uid").getAsString().equals("1000") && cache.get("initial.mode").getAsString().equals("0750") : "Download cache must retain explicit writable consumer ownership";
+            int mutations = f.mock.mutations; f.engine.reconcile(desired);
+            assert mutations == f.mock.mutations : "Unchanged model/device declarations must settle";
         }
     }
 }
