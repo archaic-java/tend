@@ -124,7 +124,7 @@ final class GrafanaFixture {
                           <mount name="admin" secret="grafana-admin" pool="tend-ci-pool" path="/etc/tend-grafana-admin" uid="472"/>
                           <mount name="key" secret="grafana-key" pool="tend-ci-pool" path="/etc/tend-grafana-key" uid="472"/>
                         </instance>
-                        <ingress-gateway 
+                        <ingress-gateway\s
                         """.formatted(fingerprint))
                 .replace("</incus>", """
                         <ingress name="grafana" host="grafana.garden.internal" instance="tend-ci-grafana" device="eth0" port="3000"><public/></ingress>

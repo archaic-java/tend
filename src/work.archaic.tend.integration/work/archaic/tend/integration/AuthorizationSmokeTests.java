@@ -297,7 +297,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 assert groupEvidence.groupDenied() : "Grafana must report its allowed-group denial for an observer with a valid Viewer role";
                 assert !groupEvidence.leaked() : "Group denial must not leak credentials into application logs or command evidence";
                 grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
-                garden.source("grafana.ini", grafana.configuration("admins observers", "None"));
+                garden.source("grafana.ini", grafana.configuration("admins observers", ""));
                 String strictRevision = garden.commitXml(grafana.xml(), "Exercise strict role rejection independently of group admission");
                 garden.reconcile(); grafana.ready();
                 assert garden.lastSuccess().equals(strictRevision) && !garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Git configuration changes must activate the real OCI consumer";
