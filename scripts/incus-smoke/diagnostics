@@ -73,3 +73,10 @@ capture client-console sudo incus console tend-ci-client --show-log
 capture server-console sudo incus console tend-ci-server --show-log
 capture nft sudo nft list ruleset
 capture iptables sudo iptables-save
+
+# Native application diagnostics expose configuration/health, never credential files or raw consoles.
+for name in tend-ci-native-gateway tend-ci-native-auth tend-ci-native-backend tend-ci-native-client; do
+    capture "$name-config" sudo incus config show "$name" --expanded
+    capture "$name-state" sudo incus info "$name"
+done
+capture native-lan sudo incus network show tend-ci-nlan

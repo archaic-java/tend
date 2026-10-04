@@ -15,6 +15,13 @@ The VM contains both OVN's central database/control plane and its local controll
 
 ## What it proves
 
+Offline and Docker verification run automatically. The expensive Incus job runs only on an
+explicit workflow dispatch or a PR carrying the `incus-integration` label. Apply that label once
+the coherent revision or combined stack is ready; subsequent changes to that labelled PR rerun
+it, so remove the label while iterating. Push-to-main verification does not repeat the disposable
+suite automatically. Per-ref concurrency cancels superseded attempts. For stacked review, retain
+one final full-suite run whose head contains every dependent change, then link that evidence.
+
 The OVN Minau case starts two containers on `tend-ci-ovn`, with static IPv4 addresses. The server
 exposes the same HTTP response on 8080 and 8081. A statically linked BusyBox binary from the runner
 provides both servers and the client probe; guest package installation is unnecessary.
@@ -198,6 +205,13 @@ The cases use different resources and evidence directories so concurrent Minau e
 TLS keys, private Java arguments and controller state are outside the uploaded artifact. The test
 uses the normal JSSE client/trust stores and hostname verification; there is no TLS bypass.
 
+The native ingress case separately caches the upstream Caddy and Authelia OCI images documented
+in [native ingress](native-ingress.md), using ordinary private and second-interface test bridges.
+It checks their actual entrypoints/config list, privately delivered users, verified disposable TLS,
+HTTP and WebSocket authorization, forged identity removal, private-only Caddy metrics, changed
+policy activation and retained Caddy CA. It does not use the OpenRC wrappers. Public ACME
+issuance remains operator acceptance; the browser/OIDC cases above retain their independent scope.
+
 ## Inputs and evidence
 
 - GitHub runner OS label: `ubuntu-24.04`, AMD64.
@@ -248,7 +262,7 @@ These scripts install packages, change host network services and create/delete f
 resources in the default and `tend-ci-oci` projects. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
 existing Incus host. The scripts require `TEND_DISPOSABLE_RUNNER=yes` as an explicit environment
 selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3, Docker, Google Chrome and working host internet access. Host loopback port 443 must be free. Nested KVM must be available and the additional Pi subnet
-`10.78.0.0/24` and controller bridge `10.79.0.0/24` must not conflict with existing routes.
+`10.78.0.0/24`, controller bridge `10.79.0.0/24` and native second-interface bridge `10.80.0.0/24` must not conflict with existing routes.
 
 From Tend's repository root:
 
@@ -264,6 +278,7 @@ bash scripts/incus-smoke/prepare-grafana
 bash scripts/incus-smoke/prepare-pi
 bash scripts/incus-smoke/authenticate
 bash scripts/incus-smoke/prepare-controller
+bash scripts/incus-smoke/prepare-native-ingress
 sudo apt-get install -y libnss3-tools
 google-chrome --version >out/incus-smoke/browser-version.txt
 echo '127.0.0.1 auth.garden.internal' | sudo tee -a /etc/hosts >/dev/null

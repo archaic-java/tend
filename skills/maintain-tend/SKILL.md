@@ -44,6 +44,8 @@ Use this entry point for both human contributors and coding agents.
 
 | Provision/update private users, metrics TLS or SMTP | [Private inputs](references/private-inputs.md), [resource model](references/resource-model.md) | Operator scripts/bootstrap/private-volume; ownership preflight, offline safety and real authorization case. |
 
+| Configure upstream OCI ingress and private gateway metrics | [Native ingress](references/native-ingress.md), [resource model](references/resource-model.md#ingress) | Gateway lowering, NativeIngressSmokeTests and pinned cache inputs; verify private binding and HTTP/WebSocket decisions. |
+
 ## Complete the change
 
 Keep command files and module descriptors aligned with code. Update the owning reference for

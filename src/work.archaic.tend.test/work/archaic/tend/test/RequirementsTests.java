@@ -20,6 +20,7 @@ public record RequirementsTests() implements TestSuite {
         cases.add(new NamedConfigurationChanges());
         cases.add(new RemovedConfigurationFile());
         cases.add(new IngressProjection());
+        cases.add(new PrivateGatewayMetrics());
         cases.add(new IngressIdempotence());
         cases.add(new AuthorizationActivationFails());
         cases.add(new EgressProjection());
@@ -316,6 +317,25 @@ record UnshiftedFileVolume() implements TestCase {
             catch (work.archaic.tend.state.StateException expected) { rejected = true; }
             assert rejected : "File volumes without explicit idmapped mounts must fail before deployment";
             assert f.mock.mutations == 0 : "Unsupported ID mapping must not partially deploy resources";
+        }
+    }
+}
+
+record PrivateGatewayMetrics() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (var f = new DeploymentFixture()) {
+            String xml = RequirementsFixture.ingress().replace("authorization-path=\"/etc/tend-authorization\"/>", "authorization-path=\"/etc/tend-authorization\"><metrics device=\"eth0\"/></ingress-gateway>");
+            xml = xml.replace("<instance name=\"caddy\" fingerprint=\"" + Garden.IMAGE + "\">", "<instance name=\"caddy\" fingerprint=\"" + Garden.IMAGE + "\"><device name=\"eth0\" type=\"nic\"><config><entry key=\"network\" value=\"garden-net\"/><entry key=\"ipv4.address\" value=\"10.20.0.12\"/></config></device>");
+            assert !xml.equals(RequirementsFixture.ingress()) : "Fixture must enable the private metrics declaration";
+            RequirementsFixture.apply(f, xml);
+            String caddy = RequirementsFixture.text(f, "Caddyfile");
+            assert caddy.contains("{\n    metrics\n}") && caddy.contains("http://10.20.0.12:9180") && caddy.contains("bind 10.20.0.12") : "Metrics must be explicitly bound to the private gateway NIC";
+            for (String header : List.of("Remote-User", "Remote-Email", "Remote-Groups", "Remote-Name", "X-Forwarded-User", "X-Forwarded-Email", "X-Forwarded-Groups"))
+                assert caddy.split("request_header -" + header, -1).length == 3 : "Every public and protected route must strip client identity headers";
+            int mutations = f.mock.mutations;
+            boolean rejected = false;
+            try { f.revision(xml.replace("10.20.0.12", "203.0.113.12"), "unchanged"); } catch (StateException e) { rejected = true; }
+            assert rejected && f.mock.mutations == mutations : "Public-address metrics must reject before mutation";
         }
     }
 }

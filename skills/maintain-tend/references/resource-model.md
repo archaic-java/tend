@@ -140,6 +140,11 @@ IP directly. Network topology/firewall enforcement of that boundary needs its ow
 OIDC login in Grafana/Open WebUI is a distinct requirement: proxy authorization does not register
 OIDC clients or enforce their policies. Secret declarations can supply the matching raw/hash credentials.
 
+An optional gateway `<metrics device="eth1"/>` enables Caddy counters and `/metrics` on
+port 9180, explicitly bound to the gateway's declared private managed-network NIC and RFC1918
+address. This fixed listener is separate from public host routes. All routes also strip the three
+`X-Forwarded-User/Email/Groups` identity headers. See [upstream OCI startup and metrics](native-ingress.md).
+
 ## Egress
 
 ```xml

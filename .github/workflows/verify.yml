@@ -61,6 +61,8 @@ jobs:
         run: bash scripts/incus-smoke/authenticate
       - name: Build and import the actual Tend OCI controller
         run: bash scripts/incus-smoke/prepare-controller
+      - name: Cache upstream Caddy and Authelia OCI images
+        run: bash scripts/incus-smoke/prepare-native-ingress
       - name: Prepare browser passkey probe
         run: |
           sudo apt-get update

@@ -15,7 +15,6 @@ for volume in json.load(sys.stdin):
     timeout 30 sudo incus storage volume delete tend-ci-pool "$volume" --project tend-ci-oci || true
 done
 timeout 30 sudo incus project delete tend-ci-oci || true
-timeout 30 sudo incus network delete tend-ci-ctl || true
 timeout 30 sudo incus image delete tend-ci-controller-oci || true
 if [[ -f out/incus-smoke/controller-directory.txt ]]; then
     controller=$(cat out/incus-smoke/controller-directory.txt)
@@ -24,7 +23,7 @@ if [[ -f out/incus-smoke/controller-directory.txt ]]; then
         sudo rm -rf -- "$controller"
     fi
 fi
-for name in tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server tend-ci-gateway tend-ci-ingress-backend tend-ci-ingress-authorization tend-ci-ingress-client tend-ci-ingress-seed tend-ci-auth-gateway tend-ci-auth-service tend-ci-auth-backend tend-ci-auth-client tend-ci-authelia-seed tend-ci-grafana tend-ci-pi tend-ci-private-operator; do
+for name in tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server tend-ci-gateway tend-ci-ingress-backend tend-ci-ingress-authorization tend-ci-ingress-client tend-ci-ingress-seed tend-ci-auth-gateway tend-ci-auth-service tend-ci-auth-backend tend-ci-auth-client tend-ci-authelia-seed tend-ci-grafana tend-ci-pi tend-ci-private-operator tend-ci-native-gateway tend-ci-native-auth tend-ci-native-backend tend-ci-native-client; do
     timeout 30 sudo incus delete "$name" --force || true
 done
 timeout 30 sudo incus network acl delete tend-ci-egress || true
@@ -41,10 +40,13 @@ if sudo iptables -nL DOCKER-USER >/dev/null 2>&1; then
     sudo iptables -D DOCKER-USER -i tend-ci-pi-net -j ACCEPT || true
     sudo iptables -D DOCKER-USER -o tend-ci-pi-net -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT || true
 fi
+timeout 30 sudo incus network delete tend-ci-ctl || true
+timeout 30 sudo incus network delete tend-ci-nlan || true
 timeout 30 sudo incus network delete tend-ci-pi-net || true
 timeout 30 sudo incus network delete tend-ci-ovn || true
 timeout 30 sudo incus network delete tend-ci-uplink || true
 timeout 30 sudo incus storage volume delete tend-ci-pool tend-ci-private-users || true
+timeout 30 sudo incus storage volume delete tend-ci-pool tend-ci-native-users || true
 timeout 30 sudo incus storage volume delete tend-ci-pool tend-ci-data || true
 timeout 30 sudo incus storage volume delete tend-ci-pool tend-ci-grafana-data || true
 # Generated configuration volumes are retained by Tend; remove only this fixture owner's volumes.
@@ -56,7 +58,7 @@ for volume in json.load(sys.stdin):
 ' | while IFS= read -r volume; do
     timeout 30 sudo incus storage volume delete tend-ci-pool "$volume" || true
 done
-for image in tend-ci-caddy tend-ci-probe tend-ci-authelia tend-ci-grafana tend-ci-pi tend-ci-private-operator; do
+for image in tend-ci-native-caddy tend-ci-native-authelia tend-ci-caddy tend-ci-probe tend-ci-authelia tend-ci-grafana tend-ci-pi tend-ci-private-operator tend-ci-native-gateway tend-ci-native-auth tend-ci-native-backend tend-ci-native-client; do
     timeout 30 sudo incus image delete "$image" || true
 done
 sudo incus remote remove tend-ci-docker || true

@@ -14,7 +14,7 @@ public record DesiredState(String project, List<Secret> secrets, List<Volume> vo
     }
     public record Mount(String name, String configuration, String secret, String pool, String path, int uid, int gid, String mode) {}
     public record Gateway(String instance, String pool, String path, String authorizationInstance,
-                          String authorizationDevice, int authorizationPort, String authorizationPath, int uid, int gid, int authorizationUid, int authorizationGid) {}
+                          String authorizationDevice, int authorizationPort, String authorizationPath, int uid, int gid, int authorizationUid, int authorizationGid, String metricsDevice) {}
     public record Ingress(String name, String host, String instance, String device, int port, boolean publicAccess, String policy, List<String> groups) {
         public Ingress { groups = List.copyOf(groups); }
     }

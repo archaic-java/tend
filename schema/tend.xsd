@@ -152,6 +152,9 @@
         </xs:element>
         <xs:element name="ingress-gateway" minOccurs="0">
           <xs:complexType>
+            <xs:sequence><xs:element name="metrics" minOccurs="0"><xs:complexType>
+              <xs:attribute name="device" type="name" use="required"/>
+            </xs:complexType></xs:element></xs:sequence>
             <xs:attribute name="instance" type="name" use="required"/>
             <xs:attribute name="pool" type="name" use="required"/>
             <xs:attribute name="path" type="directoryPath" use="required"/>

@@ -129,7 +129,7 @@ public final class StateReader {
         if (elements.isEmpty()) return null;
         var e = elements.getFirst();
         return new Gateway(e.getAttribute("instance"), e.getAttribute("pool"), e.getAttribute("path"), e.getAttribute("authorization-instance"),
-                e.getAttribute("authorization-device"), integer(e, "authorization-port"), e.getAttribute("authorization-path"), integer(e, "uid"), integer(e, "gid"), integer(e, "authorization-uid"), integer(e, "authorization-gid"));
+                e.getAttribute("authorization-device"), integer(e, "authorization-port"), e.getAttribute("authorization-path"), integer(e, "uid"), integer(e, "gid"), integer(e, "authorization-uid"), integer(e, "authorization-gid"), children(e, "metrics").isEmpty() ? "" : children(e, "metrics").getFirst().getAttribute("device"));
     }
     private static List<Ingress> ingresses(Element root) throws StateException {
         List<Ingress> result = new ArrayList<>();
