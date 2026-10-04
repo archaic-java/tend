@@ -15,7 +15,7 @@ for volume in json.load(sys.stdin):
     timeout 30 sudo incus storage volume delete tend-ci-pool "$volume" --project tend-ci-oci || true
 done
 timeout 30 sudo incus project delete tend-ci-oci || true
-timeout 30 sudo incus network delete tend-ci-controller-net || true
+timeout 30 sudo incus network delete tend-ci-ctl || true
 timeout 30 sudo incus image delete tend-ci-controller-oci || true
 if [[ -f out/incus-smoke/controller-directory.txt ]]; then
     controller=$(cat out/incus-smoke/controller-directory.txt)

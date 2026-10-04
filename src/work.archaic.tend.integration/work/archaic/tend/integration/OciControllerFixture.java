@@ -34,7 +34,7 @@ final class OciControllerFixture {
     void bootstrap(String mode) throws IOException, InterruptedException {
         var result = commands.command(Duration.ofMinutes(3), List.of("sudo", "-n", "bash",
                 "scripts/bootstrap/controller", mode, "local", PROJECT, "tend-ci-pool",
-                "tend-ci-controller-net", fingerprint, CONTROLLER, STATE, BOOTSTRAP, PROJECT,
+                "tend-ci-ctl", fingerprint, CONTROLLER, STATE, BOOTSTRAP, PROJECT,
                 privateDirectory.toString()));
         if (result.status() != 0) throw new IOException("Operator OCI bootstrap failed; private details withheld");
     }

@@ -15,7 +15,7 @@ sudo cp "$fixture/artifact/provenance.json" out/incus-smoke/controller-provenanc
 # A dedicated project tests restricted controller trust and avoids all other fixture resources.
 sudo incus project create tend-ci-oci -c features.images=false -c features.networks=false \
     -c features.profiles=true -c features.storage.volumes=true
-sudo incus network create tend-ci-controller-net --type=bridge \
+sudo incus network create tend-ci-ctl --type=bridge \
     ipv4.address=10.79.0.1/24 ipv4.nat=true ipv6.address=none
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
     -subj /CN=tend-ci-oci -addext extendedKeyUsage=clientAuth \

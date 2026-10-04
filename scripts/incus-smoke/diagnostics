@@ -64,7 +64,7 @@ capture volumes sudo incus storage volume list tend-ci-pool
 capture oci-controller sudo incus config show tend-ci-watch --project tend-ci-oci --expanded
 capture oci-controller-state sudo incus info tend-ci-watch --project tend-ci-oci
 capture oci-application sudo incus config show tend-ci-oci-app --project tend-ci-oci --expanded
-capture oci-controller-network sudo incus network show tend-ci-controller-net
+capture oci-controller-network sudo incus network show tend-ci-ctl
 # Never capture the controller console, private Java arguments, Git auth or secret/state bytes.
 # The case inspects them privately and reports only safe assertions.
 capture operations sudo incus operation list
