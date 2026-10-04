@@ -102,3 +102,5 @@ and rotation remain deferred. Deleting the controller secret directory loses gen
 preserve its volume during replacement.
 
 See [development guidance](skills/maintain-tend/references/development.md) for test boundaries and the implementation sequence.
+
+Fresh private users, metrics TLS and optional SMTP credentials use [operator-owned read-only volumes](skills/maintain-tend/references/private-inputs.md); Tend retains ownership of generated application secrets.

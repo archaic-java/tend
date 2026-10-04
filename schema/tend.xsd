@@ -82,6 +82,11 @@
             </xs:sequence>
             <xs:attribute name="name" type="name" use="required"/>
             <xs:attribute name="pool" type="name" use="required"/>
+            <xs:attribute name="private-owner" type="name"/>
+            <xs:attribute name="private-uid" type="xs:nonNegativeInteger"/>
+            <xs:attribute name="private-kind"><xs:simpleType><xs:restriction base="xs:string">
+              <xs:enumeration value="users"/><xs:enumeration value="metrics"/><xs:enumeration value="smtp"/>
+            </xs:restriction></xs:simpleType></xs:attribute>
           </xs:complexType>
         </xs:element>
         <xs:element name="instance" minOccurs="0" maxOccurs="unbounded">

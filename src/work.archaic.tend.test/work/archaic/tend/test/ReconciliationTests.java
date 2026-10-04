@@ -35,6 +35,8 @@ public record ReconciliationTests() implements TestSuite {
         cases.add(new OperationTimeout());
         cases.add(new Unmanaged());
         cases.add(new Scope());
+        cases.add(new PrivateVolumePreserved());
+        cases.add(new PrivateVolumePreflight());
     }
 }
 record Idempotence() implements TestCase {
@@ -282,6 +284,61 @@ record FileMetadataRepairRecovery() implements TestCase {
             assert f.mock.running.get(Garden.INSTANCE) : "Recovered consumer must return to its running desired state";
             int mutations = f.mock.mutations; fresh.reconcile(f.desired);
             assert mutations == f.mock.mutations : "Recovery must finish in an idempotent state";
+        }
+    }
+}
+
+record PrivateVolumePreserved() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (var f = new DeploymentFixture()) {
+            String path = "/1.0/storage-pools/pool/volumes/custom/operator-users";
+            var volume = JsonParser.parseString("""
+                    {"config":{"user.tend.private":"test-controller","user.tend.private.kind":"users",
+                    "security.shifted":"true","initial.uid":"1000","initial.gid":"1000","initial.mode":"0700"}}
+                    """).getAsJsonObject();
+            f.mock.resources.put(path, volume.deepCopy());
+            var privateFile = new IncusMock.StoredFile("private-issued-users".getBytes(), "1000", "1000", "0400");
+            f.mock.files.put(path + "/users.yml", privateFile);
+            var desired = f.revision(PrivateVolumePreflight.xml("true"), "version=one\n");
+            f.engine.reconcile(desired);
+            int writes = f.mock.mutations;
+            f.engine.reconcile(desired);
+            var restarted = new Reconciler(f.client, new SecretStore(f.garden.state.resolve("secrets")), "garden", "test-controller");
+            restarted.reconcile(desired);
+            assert f.mock.mutations == writes : "Private delivery and restart must settle without rewriting operator material";
+            assert f.mock.resources.get(path).equals(volume) && f.mock.files.get(path + "/users.yml").equals(privateFile) : "Tend must preserve operator volume configuration and credential bytes";
+            assert !Files.readString(f.garden.author.resolve("incus.xml")).contains("private-issued-users") : "Desired Git declares paths and ownership, never private bytes";
+        }
+    }
+}
+record PrivateVolumePreflight() implements TestCase {
+    static String xml(String readonly) {
+        return Garden.xml().replace("<instance name=", """
+                <volume pool="pool" name="operator-users" private-owner="test-controller" private-kind="users" private-uid="1000"/><instance name=
+                """.stripTrailing()).replace("</instance>", """
+                <device name="operator-users" type="disk"><config>
+                  <entry key="pool" value="pool"/><entry key="source" value="operator-users"/>
+                  <entry key="path" value="/etc/private-users"/><entry key="readonly" value="%s"/>
+                </config></device></instance>
+                """.formatted(readonly));
+    }
+    public void run(TestTrail trail) throws Exception {
+        for (String failure : List.of("missing", "wrong-owner", "writable", "ambiguous")) {
+            try (var f = new DeploymentFixture()) {
+                String path = "/1.0/storage-pools/pool/volumes/custom/operator-users";
+                var config = new JsonObject();
+                config.addProperty("user.tend.private", failure.equals("wrong-owner") ? "other-controller" : "test-controller");
+                config.addProperty("user.tend.private.kind", "users"); config.addProperty("security.shifted", "true");
+                config.addProperty("initial.uid", "1000"); config.addProperty("initial.gid", "1000"); config.addProperty("initial.mode", "0700");
+                if (failure.equals("ambiguous")) config.addProperty("user.tend.owner", "test-controller");
+                var volume = new JsonObject(); volume.add("config", config);
+                if (!failure.equals("missing")) f.mock.resources.put(path, volume);
+                var desired = f.revision(xml(failure.equals("writable") ? "false" : "true"), "version=one\n");
+                boolean rejected = false;
+                try { f.engine.reconcile(desired); } catch (ReconciliationException e) { rejected = true; }
+                assert rejected && f.mock.mutations == 0 : "Missing, misowned, writable or ambiguous private input must fail before every mutation";
+                assert !Files.exists(f.garden.state.resolve("secrets/session")) : "Failed private preflight must not generate credentials";
+            }
         }
     }
 }

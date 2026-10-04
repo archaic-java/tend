@@ -20,6 +20,7 @@ jobs:
       - run: java @cmd/test
       - run: java @cmd/run --help
       - run: python3 scripts/bootstrap/test-controller
+      - run: python3 scripts/bootstrap/test-private-volume
   oci:
     runs-on: ubuntu-latest
     steps:

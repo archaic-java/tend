@@ -42,6 +42,8 @@ Use this entry point for both human contributors and coding agents.
 | Bootstrap a reset IncusOS host | [Remote bootstrap](references/incusos-bootstrap.md), [manifest template](references/bootstrap-manifest.example.md) | Operator procedure only; validate actual network roles, image fingerprints, TLS and target storage before handing off to the controller. |
 | Build/import, install or replace the OCI controller | [OCI controller](references/oci-controller.md), [integration evidence](references/incus-smoke.md) | scripts/bootstrap and ControllerSmokeTests; retain state, private credentials and one writer; bootstrap is operator-owned. |
 
+| Provision/update private users, metrics TLS or SMTP | [Private inputs](references/private-inputs.md), [resource model](references/resource-model.md) | Operator scripts/bootstrap/private-volume; ownership preflight, offline safety and real authorization case. |
+
 ## Complete the change
 
 Keep command files and module descriptors aligned with code. Update the owning reference for

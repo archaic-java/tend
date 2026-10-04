@@ -22,13 +22,19 @@ password=next(x.removeprefix('Random Password: ') for x in lines if x.startswith
 digest=next(x.removeprefix('Digest: ') for x in lines if x.startswith('Digest: '))
 users={}
 for name,group in [('alice','gardeners'),('bob','observers'),('carol','admins')]:
-    users[name]=dict(displayname=name.title(),password=digest,email=name+'@example.invalid',groups=[group])
+    users[name]=dict(displayname=name.title(),password=digest,email=name+'@example.invalid',groups=[group]+(['ai-users'] if name=='alice' else []))
     p.joinpath(name+'.json').write_text(json.dumps(dict(username=name,password=password,keepMeLoggedIn=False,targetURL='https://app.garden.internal/cgi-bin/probe')))
-p.joinpath('users.yml').write_text(json.dumps(dict(users=users)))
+p.joinpath('inputs').mkdir(mode=0o700)
+p.joinpath('inputs/users.yml').write_text(json.dumps(dict(users=users)))
 p.joinpath('hash.txt').unlink()
 PY
 sudo incus exec tend-ci-authelia-seed -- mkdir -p /etc/authelia /var/lib/authelia
-sudo incus file push "$fixture/users.yml" tend-ci-authelia-seed/etc/authelia/users.yml --mode=0600
+# User data is never baked into the cached application image.
+sudo python3 scripts/bootstrap/private-volume create users local default tend-ci-pool \
+    tend-ci-private-users tend-ci-controller 0 "$fixture/inputs"
+# A stopped operator fixture exercises the same replacement interlock as the real bootstrap controller.
+sudo incus init tend-ci-alpine tend-ci-private-operator --no-profiles --storage tend-ci-pool \
+    -c user.tend.bootstrap=tend-ci-controller
 sudo incus file push scripts/incus-smoke/authelia-entrypoint tend-ci-authelia-seed/usr/local/bin/tend-authelia-entrypoint --mode=0755
 sudo incus file push scripts/incus-smoke/authelia-service tend-ci-authelia-seed/etc/init.d/tend-authelia --mode=0755
 sudo incus exec tend-ci-authelia-seed -- rc-update add tend-authelia default
@@ -36,4 +42,4 @@ sudo incus stop tend-ci-authelia-seed
 sudo incus publish tend-ci-authelia-seed --alias tend-ci-authelia
 sudo incus image info tend-ci-authelia | sed -n 's/^Fingerprint: //p' >out/incus-smoke/authelia-fingerprint.txt
 sudo incus delete tend-ci-authelia-seed
-rm "$fixture/authelia.tar.gz" "$fixture/authelia" "$fixture/users.yml"
+rm "$fixture/authelia.tar.gz" "$fixture/authelia"
