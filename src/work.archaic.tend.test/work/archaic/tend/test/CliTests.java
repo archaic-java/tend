@@ -10,6 +10,7 @@ import work.archaic.service.test.v02.*;
 public record CliTests() implements TestSuite {
     public void cases(Collection<TestCase> cases) {
         cases.add(new CliReconciles());
+        cases.add(new CliPrivateLaunchFile());
         cases.add(new CliRejectsInvalidRevision());
         cases.add(new CliWatchRecovers());
         cases.add(new CliInterrupted());
@@ -161,5 +162,22 @@ final class CliProcess {
         if (!process.isAlive()) return;
         process.destroyForcibly();
         process.waitFor();
+    }
+}
+
+record CliPrivateLaunchFile() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (Garden garden = new Garden(); IncusMock mock = new IncusMock()) {
+            String revision = garden.commit(Garden.xml(), "private launcher");
+            Path launch = garden.directory.resolve("launch.args");
+            Files.createFile(launch, java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
+            Files.writeString(launch, "-Djavax.net.ssl.keyStorePassword=synthetic-private-launcher\n" + Files.readString(Path.of("cmd/run")) + "\n" + String.join("\n", CliProcess.arguments(garden, mock, "once")) + "\n");
+            Process process = CliProcess.launch(garden, List.of(CliProcess.java(), "@" + launch));
+            try {
+                assert CliProcess.finish(process) == 0 : "A single complete private JDK argument file must expand launcher options and Tend arguments before the main target boundary";
+                assert Files.readString(garden.state.resolve("last-success")).strip().equals(revision) : "The private launcher must perform actual reconciliation";
+                assert !Files.readString(garden.directory.resolve("cli-output")).contains("synthetic-private-launcher") : "Private launcher properties must not reach logs";
+            } finally { CliProcess.stop(process); }
+        }
     }
 }

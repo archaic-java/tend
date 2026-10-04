@@ -42,7 +42,7 @@ elif a[:3]==['storage','volume','list']:
         return [c for c in commands if c[0]=='init' or 'create' in c or 'push' in c or 'add' in c]
     result, observed = run('create','create')
     assert result.returncode == 0, result.stderr
-    assert len(mutations(observed)) == 9, 'Create must add exactly two volumes, four inputs, one guest and two mounts'
+    assert len(mutations(observed)) == 10, 'Create must add exactly two volumes, five private inputs including the complete launch file, one guest and two mounts'
     assert not any(c[0]=='start' for c in observed), 'Operator must explicitly authorize starting watch'
     result, observed = run('create','instance-collision')
     assert result.returncode != 0 and not mutations(observed), 'A conflicting guest must fail before writes'

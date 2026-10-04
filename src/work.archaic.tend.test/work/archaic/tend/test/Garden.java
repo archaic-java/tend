@@ -28,7 +28,7 @@ final class Garden implements AutoCloseable {
         GitRepository.command(author, "add", ".");
         GitRepository.command(author, "commit", "--allow-empty", "-m", "Desired state");
         GitRepository.command(author, "push", "--force", "origin", "main");
-        return git.fetchMain().commit();
+        return new String(GitRepository.command(author, "rev-parse", "HEAD"), java.nio.charset.StandardCharsets.UTF_8).strip();
     }
     static String xml() {
         return """
