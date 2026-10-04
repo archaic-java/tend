@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]]
+sudo incus remote add tend-ci-ghcr https://ghcr.io --protocol=oci
+image='open-webui/open-webui@sha256:9591b13f13843c7721c2b8eaf7382846c81b3ffe126526d1888d1fed50c6a33f'
+printf '%s\n' "$image" >out/incus-smoke/openwebui-oci-image.txt
+timeout 300 sudo incus image copy "tend-ci-ghcr:$image" local: --alias tend-ci-openwebui
+sudo incus image info tend-ci-openwebui >out/incus-smoke/openwebui-image.txt
+sed -n 's/^Fingerprint: //p' out/incus-smoke/openwebui-image.txt >out/incus-smoke/openwebui-fingerprint.txt

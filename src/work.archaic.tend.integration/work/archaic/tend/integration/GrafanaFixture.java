@@ -155,7 +155,7 @@ final class GrafanaFixture {
         Path console = garden.directory.resolve("grafana-console.private");
         privateCommand(console, "exec", INSTANCE, "--", "cat", "/var/lib/grafana/logs/grafana.log"); evidence.add(console);
         Path auth = garden.directory.resolve("grafana-authelia-log.private");
-        privateCommand(auth, "exec", AuthorizationFixture.AUTH, "--", "cat", "/var/log/tend-authelia.log"); evidence.add(auth);
+        privateCommand(auth, "exec", AuthorizationFixture.AUTH, "--", "cat", "/var/lib/authelia/authelia.log"); evidence.add(auth);
         for (String mount : List.of("client", "admin", "key")) {
             Path file = garden.directory.resolve("grafana-" + mount + ".private");
             privateCommand(file, "exec", INSTANCE, "--", "cat", "/etc/tend-grafana-" + mount + "/value");

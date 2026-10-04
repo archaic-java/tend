@@ -35,7 +35,7 @@ capture managed-state sudo incus info tend-ci-managed
 capture managed-volume sudo incus storage volume show tend-ci-pool tend-ci-data
 for name in gateway ingress-backend ingress-authorization ingress-client auth-gateway auth-service auth-backend auth-client; do
     capture "$name" sudo incus config show "tend-ci-$name" --expanded
-    capture "$name-console" sudo incus console "tend-ci-$name" --show-log
+    if [[ $name != auth-service ]]; then capture "$name-console" sudo incus console "tend-ci-$name" --show-log; fi
     capture "$name-addresses" sudo incus exec "tend-ci-$name" -- /bin/busybox ip address
     capture "$name-routes" sudo incus exec "tend-ci-$name" -- /bin/busybox ip route
 done
@@ -44,8 +44,6 @@ capture caddyfile sudo incus exec tend-ci-gateway -- cat /etc/caddy/Caddyfile
 capture caddy-service sudo incus exec tend-ci-gateway -- rc-service tend-caddy status
 capture auth-caddy-log sudo incus exec tend-ci-auth-gateway -- cat /var/log/tend-caddy.log
 capture auth-caddyfile sudo incus exec tend-ci-auth-gateway -- cat /etc/caddy/Caddyfile
-capture authelia-log sudo incus exec tend-ci-auth-service -- cat /var/log/tend-authelia.log
-capture authelia-service sudo incus exec tend-ci-auth-service -- rc-service tend-authelia status
 capture access-control sudo incus exec tend-ci-auth-service -- cat /etc/tend-authorization/access-control.json
 capture grafana sudo incus config show tend-ci-grafana --expanded
 capture grafana-state sudo incus info tend-ci-grafana
@@ -86,3 +84,7 @@ for name in tend-ci-prometheus tend-ci-monitor-grafana; do
     capture "$name-state" sudo incus info "$name"
 done
 # Monitoring keys, curl credentials, raw Grafana logs and TLS stores are excluded.
+
+capture openwebui sudo incus config show tend-ci-openwebui --expanded
+capture openwebui-state sudo incus info tend-ci-openwebui
+# OAuth application and issuer logs are inspected privately; do not upload raw consoles.

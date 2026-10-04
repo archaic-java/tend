@@ -52,12 +52,15 @@ final class AuthorizationFixture {
         return Files.readString(file);
     }
     void updatePrivateGroups(boolean grant) throws IOException, InterruptedException {
+        updatePrivateGroups("alice", grant ? List.of("admins", "ai-users") : List.of("gardeners", "ai-users"));
+    }
+    void updatePrivateGroups(String user, List<String> memberships) throws IOException, InterruptedException {
         String fixture = Files.readString(Path.of("out/incus-smoke/authelia-fixture-directory.txt")).strip();
         Path input = Path.of(fixture, "inputs", "users.yml");
         var users = com.google.gson.JsonParser.parseString(Files.readString(input)).getAsJsonObject();
         var groups = new com.google.gson.JsonArray();
-        for (String group : grant ? List.of("admins", "ai-users") : List.of("gardeners", "ai-users")) groups.add(group);
-        users.getAsJsonObject("users").getAsJsonObject("alice").add("groups", groups);
+        for (String group : memberships) groups.add(group);
+        users.getAsJsonObject("users").getAsJsonObject(user).add("groups", groups);
         Files.writeString(input, users.toString());
         incus.require("stop", AUTH);
         var result = incus.command(Duration.ofSeconds(120), List.of("sudo", "-n", "python3", "scripts/bootstrap/private-volume",
@@ -136,7 +139,7 @@ final class AuthorizationFixture {
     }
     String baseConfiguration() {
         return """
-                {"server":{"address":"tcp://0.0.0.0:9091/"},"log":{"level":"info"},
+                {"server":{"address":"tcp://0.0.0.0:9091/"},"log":{"level":"info","file_path":"/var/lib/authelia/authelia.log"},
                  "authentication_backend":{"file":{"path":"/etc/private-users/users.yml","watch":false}},
                  "session":{"cookies":[{"domain":"garden.internal","authelia_url":"https://auth.garden.internal","default_redirection_url":"https://app.garden.internal"}]},
                  "storage":{"local":{"path":"/var/lib/authelia/db.sqlite3"}},
@@ -192,6 +195,7 @@ final class AuthorizationFixture {
                         <configuration name="oidc"><file path="/oidc.yml" source="oidc.yml"/></configuration>
                         <configuration name="authelia-base">
                         """)
+                .replace("--config /etc/tend-authorization", "--config /etc/tend-oidc/oidc.yml --config /etc/tend-authorization")
                 .replace("/etc/tend-base/configuration.json,/etc/tend-authorization", "/etc/tend-base/configuration.json,/etc/tend-oidc/oidc.yml,/etc/tend-authorization")
                 .replace("<entry key=\"environment.AUTHELIA_SESSION_SECRET_FILE\"", """
                         <entry key="environment.X_AUTHELIA_CONFIG_FILTERS" value="template"/>
@@ -211,24 +215,33 @@ final class AuthorizationFixture {
     }
     String xml(String group) throws IOException {
         String caddy = Files.readString(Path.of("out/incus-smoke/caddy-fingerprint.txt")).strip();
-        String authelia = Files.readString(Path.of("out/incus-smoke/authelia-fingerprint.txt")).strip();
+        String authelia = Files.readString(Path.of("out/incus-smoke/native-authelia-fingerprint.txt")).strip();
         if (!caddy.matches("[a-f0-9]{64}") || !authelia.matches("[a-f0-9]{64}")) throw new IOException("Expected cached application image fingerprints");
         return """
                 <incus project="default">
                   <secret name="auth-session"/><secret name="auth-storage"/><secret name="auth-reset"/>
                   <configuration name="authelia-base"><file path="/configuration.json" source="authelia.json"/></configuration>
+                  <volume pool="tend-ci-pool" name="tend-ci-auth-data"><config>
+                    <entry key="security.shifted" value="true"/><entry key="initial.uid" value="0"/>
+                    <entry key="initial.gid" value="0"/><entry key="initial.mode" value="0700"/>
+                  </config></volume>
                   <volume pool="tend-ci-pool" name="tend-ci-private-users" private-owner="tend-ci-controller" private-kind="users" private-uid="0"/>
                 """
                 + instance(GATEWAY, caddy, "10.77.1.40", "", "")
                 + instance(BACKEND, garden.fingerprint, "10.77.1.41", "", "")
                 + instance(AUTH, authelia, "10.77.1.42", """
                   <config>
+                    <entry key="oci.uid" value="0"/><entry key="oci.gid" value="0"/>
+                    <entry key="oci.entrypoint" value="/app/authelia --config /etc/tend-base/configuration.json --config /etc/tend-authorization/access-control.json"/>
                     <entry key="environment.X_AUTHELIA_CONFIG" value="/etc/tend-base/configuration.json,/etc/tend-authorization/access-control.json"/>
                     <entry key="environment.AUTHELIA_SESSION_SECRET_FILE" value="/etc/tend-session/value"/>
                     <entry key="environment.AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE" value="/etc/tend-storage/value"/>
                     <entry key="environment.AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE" value="/etc/tend-reset/value"/>
                   </config>
                 """, """
+                  <device name="data" type="disk"><config><entry key="pool" value="tend-ci-pool"/>
+                    <entry key="source" value="tend-ci-auth-data"/><entry key="path" value="/var/lib/authelia"/>
+                  </config></device>
                   <device name="private-users" type="disk"><config>
                     <entry key="pool" value="tend-ci-pool"/><entry key="source" value="tend-ci-private-users"/>
                     <entry key="path" value="/etc/private-users"/><entry key="readonly" value="true"/>

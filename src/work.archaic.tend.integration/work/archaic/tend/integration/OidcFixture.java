@@ -139,7 +139,7 @@ final class OidcFixture implements AutoCloseable {
     boolean leakedInEvidence() throws Exception {
         Path file = Files.createTempFile(directory, "oidc-log-", ".private",
                 java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
-        var pull = new ProcessBuilder("sudo", "-n", "incus", "exec", AuthorizationFixture.AUTH, "--", "cat", "/var/log/tend-authelia.log")
+        var pull = new ProcessBuilder("sudo", "-n", "incus", "exec", AuthorizationFixture.AUTH, "--", "cat", "/var/lib/authelia/authelia.log")
                 .redirectErrorStream(true).redirectOutput(file.toFile()).start();
         pull.getOutputStream().close();
         try {

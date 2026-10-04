@@ -48,6 +48,8 @@ Use this entry point for both human contributors and coding agents.
 
 | Configure Prometheus scraping and Grafana provisioning | [Monitoring](references/monitoring.md), [private inputs](references/private-inputs.md) | Flat monitoring examples and the native integration case; verify dedicated TLS, datasource/dashboard API, actual data and retained TSDB. |
 
+| Configure Open WebUI OIDC admission and wrapper | [Open WebUI](references/openwebui.md), [private inputs](references/private-inputs.md) | Existing AuthorizationSmokeTests consumer block; issuer ai-users gate, actual user endpoint and Git-authoritative settings. |
+
 ## Complete the change
 
 Keep command files and module descriptors aligned with code. Update the owning reference for

@@ -65,6 +65,8 @@ jobs:
         run: bash scripts/incus-smoke/prepare-native-ingress
       - name: Cache Prometheus and enroll a separate metrics credential
         run: bash scripts/incus-smoke/prepare-monitoring
+      - name: Cache pinned Open WebUI OCI image
+        run: bash scripts/incus-smoke/prepare-openwebui
       - name: Prepare browser passkey probe
         run: |
           sudo apt-get update
