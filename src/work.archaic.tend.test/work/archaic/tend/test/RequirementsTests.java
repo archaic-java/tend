@@ -1,9 +1,11 @@
 package work.archaic.tend.test;
 
 import com.google.gson.*;
-import java.io.IOException;
 import java.util.*;
 import work.archaic.service.test.v02.*;
+import work.archaic.tend.ReconciliationException;
+import work.archaic.tend.incus.IncusException;
+import work.archaic.tend.state.StateException;
 
 public record RequirementsTests() implements TestSuite {
     public void cases(Collection<TestCase> cases) {
@@ -108,7 +110,7 @@ record AuthorizationActivationFails() implements TestCase {
         try (var f = new DeploymentFixture()) {
             f.mock.failStart = true;
             boolean rejected = false;
-            try { RequirementsFixture.apply(f, RequirementsFixture.ingress()); } catch (IOException e) { rejected = true; }
+            try { RequirementsFixture.apply(f, RequirementsFixture.ingress()); } catch (IncusException e) { rejected = true; }
             assert rejected : "Failed authorization activation must escape reconciliation";
             assert !f.mock.running.getOrDefault("/1.0/instances/caddy", false) : "Gateway must not start ahead of authorization activation";
         }
@@ -155,7 +157,7 @@ record UnsupportedNetwork() implements TestCase {
         try (var f = new DeploymentFixture()) {
             RequirementsFixture.network(f, "bridge");
             boolean rejected = false;
-            try { RequirementsFixture.apply(f, RequirementsFixture.egress()); } catch (IOException e) { rejected = true; }
+            try { RequirementsFixture.apply(f, RequirementsFixture.egress()); } catch (ReconciliationException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Unsupported network must fail preflight before any deployment mutation";
         }
     }
@@ -166,7 +168,7 @@ record SharedNetworkAcl() implements TestCase {
             RequirementsFixture.network(f, "ovn");
             f.mock.resources.get("/1.0/networks/garden-net").getAsJsonObject("config").addProperty("security.acls", "operator-policy");
             boolean rejected = false;
-            try { RequirementsFixture.apply(f, RequirementsFixture.egress()); } catch (IOException e) { rejected = true; }
+            try { RequirementsFixture.apply(f, RequirementsFixture.egress()); } catch (ReconciliationException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Shared ACLs must not widen the declared outbound policy";
         }
     }
@@ -175,7 +177,7 @@ record MissingConfiguration() implements TestCase {
     public void run(TestTrail trail) throws Exception {
         try (var f = new DeploymentFixture()) {
             boolean rejected = false;
-            try { f.revision(RequirementsFixture.mounts().replace("configuration=\"settings\"", "configuration=\"missing\""), "first"); } catch (IOException e) { rejected = true; }
+            try { f.revision(RequirementsFixture.mounts().replace("configuration=\"settings\"", "configuration=\"missing\""), "first"); } catch (StateException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Invalid resource reference or policy must fail before mutation";
         }
     }
@@ -184,7 +186,7 @@ record MountOverlap() implements TestCase {
     public void run(TestTrail trail) throws Exception {
         try (var f = new DeploymentFixture()) {
             boolean rejected = false;
-            try { f.revision(RequirementsFixture.mounts().replace("path=\"/etc/demo\"", "path=\"/data/nested\""), "first"); } catch (IOException e) { rejected = true; }
+            try { f.revision(RequirementsFixture.mounts().replace("path=\"/etc/demo\"", "path=\"/data/nested\""), "first"); } catch (StateException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Invalid resource reference or policy must fail before mutation";
         }
     }
@@ -193,7 +195,7 @@ record MissingAuthorizationLoad() implements TestCase {
     public void run(TestTrail trail) throws Exception {
         try (var f = new DeploymentFixture()) {
             boolean rejected = false;
-            try { f.revision(RequirementsFixture.ingress().replace("/config/configuration.yml,/etc/tend-authorization/access-control.json", "/config/configuration.yml"), "first"); } catch (IOException e) { rejected = true; }
+            try { f.revision(RequirementsFixture.ingress().replace("/config/configuration.yml,/etc/tend-authorization/access-control.json", "/config/configuration.yml"), "first"); } catch (StateException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Invalid resource reference or policy must fail before mutation";
         }
     }
@@ -202,7 +204,7 @@ record DuplicateIngressHost() implements TestCase {
     public void run(TestTrail trail) throws Exception {
         try (var f = new DeploymentFixture()) {
             boolean rejected = false;
-            try { f.revision(RequirementsFixture.ingress().replace("auth.example.org", "demo.example.org"), "first"); } catch (IOException e) { rejected = true; }
+            try { f.revision(RequirementsFixture.ingress().replace("auth.example.org", "demo.example.org"), "first"); } catch (StateException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Invalid resource reference or policy must fail before mutation";
         }
     }
@@ -211,7 +213,7 @@ record UnboundIngress() implements TestCase {
     public void run(TestTrail trail) throws Exception {
         try (var f = new DeploymentFixture()) {
             boolean rejected = false;
-            try { f.revision(RequirementsFixture.ingress().replaceAll("<ingress-gateway[^>]*/>", ""), "first"); } catch (IOException e) { rejected = true; }
+            try { f.revision(RequirementsFixture.ingress().replaceAll("<ingress-gateway[^>]*/>", ""), "first"); } catch (StateException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Invalid resource reference or policy must fail before mutation";
         }
     }
@@ -220,7 +222,7 @@ record HostnameEgress() implements TestCase {
     public void run(TestTrail trail) throws Exception {
         try (var f = new DeploymentFixture()) {
             boolean rejected = false;
-            try { f.revision(RequirementsFixture.egress().replace("10.20.0.11/32", "auth.example.org"), "first"); } catch (IOException e) { rejected = true; }
+            try { f.revision(RequirementsFixture.egress().replace("10.20.0.11/32", "auth.example.org"), "first"); } catch (StateException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Invalid resource reference or policy must fail before mutation";
         }
     }
@@ -229,7 +231,7 @@ record ConflictingAclSettings() implements TestCase {
     public void run(TestTrail trail) throws Exception {
         try (var f = new DeploymentFixture()) {
             boolean rejected = false;
-            try { f.revision(RequirementsFixture.egress().replace("<entry key=\"network\"", "<entry key=\"security.acls\" value=\"external\"/><entry key=\"network\""), "first"); } catch (IOException e) { rejected = true; }
+            try { f.revision(RequirementsFixture.egress().replace("<entry key=\"network\"", "<entry key=\"security.acls\" value=\"external\"/><entry key=\"network\""), "first"); } catch (StateException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Invalid resource reference or policy must fail before mutation";
         }
     }
@@ -278,7 +280,7 @@ record UnownedNetworkAcl() implements TestCase {
             String name = new work.archaic.tend.state.ResourceCompiler().compile(state).acls().getFirst().name();
             var acl = new JsonObject(); acl.add("config", new JsonObject()); f.mock.seed("/1.0/network-acls/" + name, acl);
             boolean rejected = false;
-            try { f.engine.reconcile(state); } catch (IOException e) { rejected = true; }
+            try { f.engine.reconcile(state); } catch (ReconciliationException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Unowned ACL must fail preflight without adopting or widening it";
         }
     }

@@ -3,22 +3,21 @@ package work.archaic.tend;
 import java.io.IOException;
 import java.nio.file.*;
 import java.time.Duration;
-import work.archaic.service.logging.v02.*;
+import work.archaic.service.logging.v03.*;
 import work.archaic.tend.git.GitRepository;
 import work.archaic.tend.state.StateReader;
 
 /** Polling retries expected failures; programming defects escape the loop. */
-final class Controller {
+final class Controller implements Logging {
     private final GitRepository git;
     private final StateReader reader;
     private final Reconciler engine;
     private final Path directory;
-    private final Diagnostics diagnostics;
     private final Log log;
-    private final Goal goal;
-    Controller(GitRepository git, StateReader reader, Reconciler engine, Path directory, Diagnostics diagnostics, Log log) {
+    private final Configuration configuration;
+    Controller(GitRepository git, StateReader reader, Reconciler engine, Path directory, Log log, Configuration configuration) {
         this.git = git; this.reader = reader; this.engine = engine; this.directory = directory;
-        this.diagnostics = diagnostics; this.log = log; this.goal = diagnostics.goal("tend.reconcile", log);
+        this.log = log; this.configuration = configuration;
     }
     void run(boolean watch, Duration polling) throws ControllerFailure, InterruptedException {
         do {
@@ -27,7 +26,7 @@ final class Controller {
         } while (watch);
     }
     private void attempt(boolean watch) throws ControllerFailure, InterruptedException {
-        try { goal.run(this::pass); }
+        try { log.context(configuration).run(this::pass); }
         catch (ControllerFailure e) {
             if (e.getCause() instanceof InterruptedException interruption) throw interruption;
             if (!watch) throw e;
@@ -37,10 +36,11 @@ final class Controller {
         try {
             var revision = git.fetchMain();
             var desired = reader.read(revision, "incus.xml");
-            diagnostics.note("Reconciling commit " + revision.commit());
+            logOnFailure("Reconciling commit " + revision.commit());
+            logOnDebug(() -> "Desired resources: " + desired.volumes().size() + " volumes, " + desired.instances().size() + " instances");
             engine.reconcile(desired);
             recordSuccess(revision.commit());
-            log.write("Reconciled " + revision.commit());
+            logImmediately("Reconciled " + revision.commit());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new ControllerFailure("Reconciliation interrupted", e);

@@ -98,12 +98,13 @@ final class IncusMock implements AutoCloseable {
         if (conflict) { conflict = false; nextEtag++; error(x, 412); return; }
         if (!etag().equals(x.getRequestHeaders().getFirst("If-Match"))) { error(x, 412); return; }
         var body = body(x);
-        if (path.startsWith("/1.0/instances/")) {
-            if (body.has("source") || body.has("name") || body.has("type")) { error(x, 400); return; }
-            async(x, () -> merge(path, body), false); return;
-        }
+        if (path.startsWith("/1.0/instances/")) { updateInstance(x, path, body); return; }
         if (path.startsWith("/1.0/network-acls/") && (!body.has("ingress") || !body.has("egress") || !body.has("config"))) { error(x, 400); return; }
         merge(path, body); mutations++; sync(x, new JsonObject());
+    }
+    private void updateInstance(HttpExchange x, String path, JsonObject body) throws IOException {
+        if (body.has("source") || body.has("name") || body.has("type")) { error(x, 400); return; }
+        async(x, () -> merge(path, body), false);
     }
     private void merge(String path, JsonObject body) {
         body.entrySet().forEach(e -> resources.get(path).add(e.getKey(), e.getValue())); nextEtag++;
@@ -114,11 +115,12 @@ final class IncusMock implements AutoCloseable {
         if (resources.containsKey(target)) { error(x, 409); return; }
         if (path.equals("/1.0/instances")) { createInstance(x, target, body); return; }
         if (path.endsWith("/volumes/custom")) { createVolume(x, target, body); return; }
-        if (path.equals("/1.0/network-acls")) {
-            if (!body.has("ingress") || !body.has("egress") || !body.has("config")) { error(x, 400); return; }
-            resources.put(target, body); mutations++; nextEtag++; sync(x, new JsonObject()); return;
-        }
+        if (path.equals("/1.0/network-acls")) { createAcl(x, target, body); return; }
         error(x, 404);
+    }
+    private void createAcl(HttpExchange x, String target, JsonObject body) throws IOException {
+        if (!body.has("ingress") || !body.has("egress") || !body.has("config")) { error(x, 400); return; }
+        resources.put(target, body); mutations++; nextEtag++; sync(x, new JsonObject());
     }
     private void createInstance(HttpExchange x, String target, JsonObject body) throws IOException {
         var source = body.getAsJsonObject("source");
@@ -140,29 +142,37 @@ final class IncusMock implements AutoCloseable {
         String volume = path.substring(0, path.length() - 6);
         if (!resources.containsKey(volume)) { error(x, 404); return; }
         String key = volume + file;
-        if (method.equals("GET")) {
-            StoredFile existing = files.get(key);
-            if (existing == null) { error(x, 404); return; }
-            x.getResponseHeaders().set("Content-Type", "application/octet-stream");
-            x.getResponseHeaders().set("X-Incus-type", "file");
-            x.getResponseHeaders().set("X-Incus-uid", existing.uid());
-            x.getResponseHeaders().set("X-Incus-gid", existing.gid());
-            x.getResponseHeaders().set("X-Incus-mode", existing.mode());
-            x.sendResponseHeaders(200, existing.bytes().length); x.getResponseBody().write(existing.bytes());
-        } else if (method.equals("POST")) {
-            if (failFileWrite) { failFileWrite = false; error(x, 500); return; }
-            var h = x.getRequestHeaders();
-            if (!"file".equals(h.getFirst("X-Incus-type")) || !"overwrite".equals(h.getFirst("X-Incus-write"))) { error(x, 400); return; }
-            StoredFile old = files.get(key);
-            files.put(key, new StoredFile(x.getRequestBody().readAllBytes(),
-                    old == null ? h.getFirst("X-Incus-uid") : old.uid(),
-                    old == null ? h.getFirst("X-Incus-gid") : old.gid(),
-                    old == null ? h.getFirst("X-Incus-mode") : old.mode()));
-            mutations++; sync(x, new JsonObject());
-        } else if (method.equals("DELETE")) {
-            if (files.remove(key) == null) { error(x, 404); return; }
-            mutations++; sync(x, new JsonObject());
-        } else error(x, 405);
+        switch (method) {
+            case "GET" -> readFile(x, key);
+            case "POST" -> writeFile(x, key);
+            case "DELETE" -> deleteFile(x, key);
+            default -> error(x, 405);
+        }
+    }
+    private void readFile(HttpExchange x, String key) throws IOException {
+        StoredFile existing = files.get(key);
+        if (existing == null) { error(x, 404); return; }
+        x.getResponseHeaders().set("Content-Type", "application/octet-stream");
+        x.getResponseHeaders().set("X-Incus-type", "file");
+        x.getResponseHeaders().set("X-Incus-uid", existing.uid());
+        x.getResponseHeaders().set("X-Incus-gid", existing.gid());
+        x.getResponseHeaders().set("X-Incus-mode", existing.mode());
+        x.sendResponseHeaders(200, existing.bytes().length); x.getResponseBody().write(existing.bytes());
+    }
+    private void writeFile(HttpExchange x, String key) throws IOException {
+        if (failFileWrite) { failFileWrite = false; error(x, 500); return; }
+        var h = x.getRequestHeaders();
+        if (!"file".equals(h.getFirst("X-Incus-type")) || !"overwrite".equals(h.getFirst("X-Incus-write"))) { error(x, 400); return; }
+        StoredFile old = files.get(key);
+        files.put(key, new StoredFile(x.getRequestBody().readAllBytes(),
+                old == null ? h.getFirst("X-Incus-uid") : old.uid(),
+                old == null ? h.getFirst("X-Incus-gid") : old.gid(),
+                old == null ? h.getFirst("X-Incus-mode") : old.mode()));
+        mutations++; sync(x, new JsonObject());
+    }
+    private void deleteFile(HttpExchange x, String key) throws IOException {
+        if (files.remove(key) == null) { error(x, 404); return; }
+        mutations++; sync(x, new JsonObject());
     }
     private void async(HttpExchange x, Runnable action, boolean failed) throws IOException {
         mutations++;

@@ -1,11 +1,13 @@
 package work.archaic.tend.test;
 
 import java.nio.file.*;
-import java.io.IOException;
 import java.util.*;
 import work.archaic.service.test.v02.*;
 import work.archaic.tend.git.GitRepository;
 import work.archaic.tend.state.StateReader;
+import work.archaic.tend.state.StateException;
+import work.archaic.tend.git.GitException;
+import work.archaic.tend.secrets.SecretException;
 import work.archaic.tend.secrets.SecretStore;
 
 public record StateTests() implements TestSuite {
@@ -31,7 +33,7 @@ record UnknownElement() implements TestCase {
             garden.commit(Garden.xml().replace("</incus>", "<surprise/></incus>"), "first");
             var reader = new StateReader(Path.of("schema/tend.xsd"));
             boolean rejected = false;
-            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (IOException e) { rejected = true; }
+            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (StateException e) { rejected = true; }
             assert rejected : "Malformed desired state must be rejected before reconciliation";
         }
     }
@@ -42,7 +44,7 @@ record DuplicateDeclaration() implements TestCase {
             garden.commit(Garden.xml().replace("<secret name=\"session\" bytes=\"32\"/>", "<secret name=\"session\"/><secret name=\"session\"/>"), "first");
             var reader = new StateReader(Path.of("schema/tend.xsd"));
             boolean rejected = false;
-            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (IOException e) { rejected = true; }
+            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (StateException e) { rejected = true; }
             assert rejected : "Malformed desired state must be rejected before reconciliation";
         }
     }
@@ -53,7 +55,7 @@ record MissingSource() implements TestCase {
             garden.commit(Garden.xml().replace("source=\"service.conf\"", "source=\"missing.conf\""), "first");
             var reader = new StateReader(Path.of("schema/tend.xsd"));
             boolean rejected = false;
-            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (IOException e) { rejected = true; }
+            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (GitException e) { rejected = true; }
             assert rejected : "Malformed desired state must be rejected before reconciliation";
         }
     }
@@ -64,7 +66,7 @@ record MissingSecret() implements TestCase {
             garden.commit(Garden.xml().replace("secret=\"session\"", "secret=\"missing\""), "first");
             var reader = new StateReader(Path.of("schema/tend.xsd"));
             boolean rejected = false;
-            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (IOException e) { rejected = true; }
+            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (StateException e) { rejected = true; }
             assert rejected : "Malformed desired state must be rejected before reconciliation";
         }
     }
@@ -75,7 +77,7 @@ record UnsafeSecretMode() implements TestCase {
             garden.commit(Garden.xml().replace("mode=\"0400\"", "mode=\"0644\""), "first");
             var reader = new StateReader(Path.of("schema/tend.xsd"));
             boolean rejected = false;
-            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (IOException e) { rejected = true; }
+            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (StateException e) { rejected = true; }
             assert rejected : "Malformed desired state must be rejected before reconciliation";
         }
     }
@@ -86,7 +88,7 @@ record ReservedKey() implements TestCase {
             garden.commit(Garden.xml().replace("environment.DEMO", "user.tend.owner"), "first");
             var reader = new StateReader(Path.of("schema/tend.xsd"));
             boolean rejected = false;
-            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (IOException e) { rejected = true; }
+            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (StateException e) { rejected = true; }
             assert rejected : "Malformed desired state must be rejected before reconciliation";
         }
     }
@@ -97,7 +99,7 @@ record Doctype() implements TestCase {
             garden.commit("<!DOCTYPE incus [<!ENTITY example SYSTEM 'file:///etc/passwd'>]>" + Garden.xml(), "first");
             var reader = new StateReader(Path.of("schema/tend.xsd"));
             boolean rejected = false;
-            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (IOException e) { rejected = true; }
+            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (StateException e) { rejected = true; }
             assert rejected : "Malformed desired state must be rejected before reconciliation";
         }
     }
@@ -108,7 +110,7 @@ record PathEscape() implements TestCase {
             garden.commit(Garden.xml().replace("source=\"service.conf\"", "source=\"../service.conf\""), "first");
             var reader = new StateReader(Path.of("schema/tend.xsd"));
             boolean rejected = false;
-            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (IOException e) { rejected = true; }
+            try { reader.read(garden.git.fetchMain(), "incus.xml"); } catch (GitException e) { rejected = true; }
             assert rejected : "Malformed desired state must be rejected before reconciliation";
         }
     }
@@ -165,7 +167,7 @@ record UnavailableRemote() implements TestCase {
             var reader = new StateReader(Path.of("schema/tend.xsd"));
             Files.move(garden.remote, garden.directory.resolve("unavailable.git"));
             boolean rejected = false;
-            try { garden.git.fetchMain(); } catch (java.io.IOException e) { rejected = true; }
+            try { garden.git.fetchMain(); } catch (GitException e) { rejected = true; }
             assert rejected : "Fetch failure must not silently deploy a stale revision";
             assert new String(revision.read("service.conf")).equals("first") : "Already resolved revision remains readable offline";
 
@@ -182,7 +184,7 @@ record SecretLength() implements TestCase {
             var store = new SecretStore(garden.state.resolve("secrets"));
             byte[] original = store.getOrCreate("session", 32);
             boolean rejected = false;
-            try { store.getOrCreate("session", 64); } catch (java.io.IOException e) { rejected = true; }
+            try { store.getOrCreate("session", 64); } catch (SecretException e) { rejected = true; }
             assert rejected && Arrays.equals(original, store.getOrCreate("session", 32)) : "Changing generator parameters must not rotate an existing secret implicitly";
 
         }

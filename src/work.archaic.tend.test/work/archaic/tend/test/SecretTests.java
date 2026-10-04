@@ -1,6 +1,5 @@
 package work.archaic.tend.test;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -10,7 +9,9 @@ import java.security.spec.*;
 import java.util.*;
 import work.archaic.service.test.v02.*;
 import work.archaic.tend.secrets.SecretStore;
+import work.archaic.tend.secrets.SecretException;
 import work.archaic.tend.state.DesiredState.Secret;
+import work.archaic.tend.state.StateException;
 
 public record SecretTests() implements TestSuite {
     public void cases(Collection<TestCase> cases) {
@@ -93,7 +94,7 @@ record SecretChangesRejected() implements TestCase {
                     OidcDeclarations.xml().replace("source=\"client\"", "source=\"session\""),
                     OidcDeclarations.xml().replace("name=\"client\" bytes=\"54\"", "name=\"client\" bytes=\"64\""))) {
                 boolean rejected = false;
-                try { f.engine.reconcile(f.revision(xml, "public")); } catch (IOException e) { rejected = true; }
+                try { f.engine.reconcile(f.revision(xml, "public")); } catch (SecretException e) { rejected = true; }
                 assert rejected && f.mock.mutations == mutations : "Changing a stored generator or source must fail before Incus mutation";
             }
             f.engine.reconcile(state);
@@ -112,7 +113,7 @@ record InvalidSecretDeclarations() implements TestCase {
                     "<secret name=\"x\" kind=\"pbkdf2-sha512\" source=\"signing\"/><secret name=\"signing\" kind=\"rsa-3072\"/>",
                     "<secret name=\"x\" kind=\"pbkdf2-sha512\" source=\"y\"/><secret name=\"y\" kind=\"pbkdf2-sha512\" source=\"x\"/>")) {
                 boolean rejected = false;
-                try { f.revision(Garden.xml().replace("<volume", declaration + "<volume"), "public"); } catch (IOException e) { rejected = true; }
+                try { f.revision(Garden.xml().replace("<volume", declaration + "<volume"), "public"); } catch (StateException e) { rejected = true; }
                 assert rejected && f.mock.mutations == 0 : "Invalid generator graph must fail before deployment";
             }
         }

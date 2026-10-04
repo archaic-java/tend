@@ -16,9 +16,9 @@ prepare_source() {
         exit 1
     fi
 }
-prepare_source service-catalog 8fcaa67657b27ebc71cb8165acf70659764821b2
+prepare_source service-catalog 69f61743dc0b8a67f18b06231e3139ce0054eaf2
 prepare_source minau 93bb952390b412fbaa38b2805bcf954fb6b5bd82
-prepare_source peep c196921d0a26937c4880ea716e9dd009ca0c5452
+prepare_source culpa e3db79e01fb4891d22877102b2824b4943ebec0b
 mkdir -p lib/bin
 jar=lib/bin/gson-2.14.0.jar
 if [ ! -f "$jar" ]; then

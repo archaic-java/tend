@@ -16,6 +16,16 @@ lowers them into Incus resources before mutation. Invalid references fail the wh
 | Ingress plus authorization | `<ingress-gateway>` and `<ingress>` | Caddy host routes, Authelia forward authentication and group access rules |
 | Egress NetworkPolicy | `<egress instance="…" device="…">` | Incus network ACL attached to the declared OVN NIC |
 
+## Contents
+
+- [Change and verify resources](#change-and-verify-resources)
+- [Configuration and secrets](#configuration-and-secrets)
+- [Ingress](#ingress)
+- [Egress](#egress)
+- [Scope and recovery](#scope-and-recovery)
+- [Authoritative adapter contracts](#authoritative-adapter-contracts)
+- [Managed file volumes and ID mapping](#managed-file-volumes-and-id-mapping)
+
 ## Configuration and secrets
 
 ```xml
@@ -162,7 +172,9 @@ applications configuration, credential references, HTTP entry points and network
 it does not yet implement registry pulls, readiness, nested configuration trees, GPU validation,
 OIDC client configuration generation or metrics-specific Caddy configuration.
 
-Removal retains whole instances, volumes and ACLs. Removing mount/device entries from a retained
+Removal retains whole instances, volumes and ACLs. Removing a low-level volume file declaration
+also retains the old file; only named configuration file-set changes detach removed files through
+a new backing volume. Removing mount/device entries from a retained
 instance detaches previously managed devices. Removing ingress entries while keeping the gateway
 binding regenerates both policies. Removing the gateway binding or its instances retains the old
 resources and must not be used as an authorization revocation procedure. Deletion/pruning and
@@ -207,3 +219,20 @@ the next pass restores the missing file before activating its consumer. This rep
 atomic file replacement.
 
 OIDC secret formats: [Authelia client secrets](https://www.authelia.com/integration/openid-connect/frequently-asked-questions/), [signing keys](https://www.authelia.com/configuration/identity-providers/openid-connect/provider/).
+
+## Change and verify resources
+
+Start with [StateReader](../../../src/work.archaic.tend/work/archaic/tend/state/StateReader.java)
+and [ResourceCompiler](../../../src/work.archaic.tend/work/archaic/tend/state/ResourceCompiler.java)
+for declarations and lowering. Change [schema/tend.xsd](../../../schema/tend.xsd) and the owning
+reader/compiler together. Preserve validation before external mutations.
+
+Follow [Reconciler](../../../src/work.archaic.tend/work/archaic/tend/Reconciler.java) for preflight
+ordering, then Instances, Volumes or NetworkPolicies for convergence. Keep ETags, ownership,
+retention and pending activation recovery explicit. In particular, invalidate consumers before
+file deletion or write, and activate authorization before gateway routes.
+
+Compile with `javac @cmd/compile`, then run `java @cmd/test`. RequirementsTests covers projection
+and rejected declarations; ReconciliationTests covers drift, no-op passes and partial failure;
+SecretTests and StateTests cover private persistence, immutable Git inputs and XML rejection.
+Use [real-host integration](incus-smoke.md) when observable Incus/application behavior changes.

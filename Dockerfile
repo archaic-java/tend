@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 WORKDIR /app
 COPY --from=build /workspace/tend/out/work.archaic.tend out/work.archaic.tend
 COPY --from=build /workspace/tend/out/work.archaic.service.catalog out/work.archaic.service.catalog
-COPY --from=build /workspace/tend/out/work.archaic.peep out/work.archaic.peep
+COPY --from=build /workspace/tend/out/work.archaic.culpa out/work.archaic.culpa
 COPY --from=build /workspace/tend/lib/bin/gson-2.14.0.jar lib/bin/gson-2.14.0.jar
 COPY cmd/run cmd/run
 COPY schema schema
