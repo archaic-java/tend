@@ -75,7 +75,7 @@ if [[ -f out/incus-smoke/authelia-fixture-directory.txt ]]; then
     fixture=$(cat out/incus-smoke/authelia-fixture-directory.txt)
     [[ $fixture == /tmp/tend-ci-authelia.* ]] && rm -rf -- "$fixture"
 fi
-timeout 30 sudo incus storage delete tend-ci-pool || true
+
 
 if [[ -f out/incus-smoke/metrics-fingerprint.txt ]]; then
     timeout 30 sudo incus config trust remove "$(cat out/incus-smoke/metrics-fingerprint.txt)" || true
@@ -84,3 +84,33 @@ if [[ -f out/incus-smoke/metrics-directory.txt ]]; then
     metrics=$(cat out/incus-smoke/metrics-directory.txt)
     [[ $metrics == /tmp/tend-ci-metrics.* ]] && rm -rf -- "$metrics"
 fi
+
+# Exact isolated composition project created by prepare-rebuild; never run on a real host.
+if [[ -f out/incus-smoke/rebuild-directory.txt ]]; then
+    for name in tend-ci-watch caddy authelia grafana prometheus llama openwebui pi; do
+        timeout 30 sudo incus delete "$name" --project tend-ci-rebuild --force || true
+    done
+    timeout 30 sudo incus storage volume list tend-ci-pool --project tend-ci-rebuild --format=json 2>/dev/null | python3 -c '
+import json,sys
+for volume in json.load(sys.stdin):
+    config=volume.get("config",{})
+    if volume.get("type")=="custom" and any(config.get(key)=="tend-ci-rebuild" for key in ("user.tend.owner","user.tend.private","user.tend.bootstrap")):
+        print(volume["name"])
+' | while IFS= read -r volume; do timeout 30 sudo incus storage volume delete tend-ci-pool "$volume" --project tend-ci-rebuild || true; done
+    timeout 30 sudo incus project delete tend-ci-rebuild || true
+    if sudo iptables -nL DOCKER-USER >/dev/null 2>&1; then
+        sudo iptables -D DOCKER-USER -i tend-ci-full -j ACCEPT || true
+        sudo iptables -D DOCKER-USER -o tend-ci-full -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT || true
+    fi
+    timeout 30 sudo incus network delete tend-ci-full || true
+    fixture=$(cat out/incus-smoke/rebuild-directory.txt)
+    if [[ $fixture == /tmp/tend-ci-rebuild.* ]]; then
+        timeout 30 sudo incus config trust remove "$(cat "$fixture/client-fingerprint")" || true
+        sudo python3 - "$fixture" <<'CLEAN'
+import shutil,sys
+shutil.rmtree(sys.argv[1])
+CLEAN
+    fi
+fi
+
+timeout 30 sudo incus storage delete tend-ci-pool || true

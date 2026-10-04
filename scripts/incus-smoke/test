@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]]
+# Bound memory: component suites reuse their existing checks; composition gets its own project.
+for suite in OvnSmokeTests ReconciliationSmokeTests EgressSmokeTests IngressSmokeTests ControllerSmokeTests PiSmokeTests AuthorizationSmokeTests NativeIngressSmokeTests; do
+    java @cmd/incus-smoke --suite "work.archaic.tend.integration.$suite"
+done
+sudo incus list --format=json | python3 -c '
+import json,sys
+for instance in json.load(sys.stdin):
+    if instance.get("config",{}).get("user.tend.owner") == "tend-ci-controller" and instance.get("status") == "Running":
+        print(instance["name"])
+' | while IFS= read -r name; do timeout 60 sudo incus stop "$name" --timeout=30; done
+java @cmd/incus-smoke --suite work.archaic.tend.integration.RebuildSmokeTests

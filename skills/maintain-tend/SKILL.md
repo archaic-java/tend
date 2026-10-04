@@ -52,6 +52,8 @@ Use this entry point for both human contributors and coding agents.
 
 | Configure llama.cpp and commission AMD hardware | [Llama](references/llama.md), [remote bootstrap](references/incusos-bootstrap.md) | Device/preset offline projection, controlled CPU protocol and explicit operator GPU acceptance. |
 
+| Verify the complete fresh-install garden | [Rebuild acceptance](references/rebuild.md), [remote bootstrap](references/incusos-bootstrap.md) | Exact pinned garden preparation, actual OCI watch composition and separate operator completion ledger. |
+
 ## Complete the change
 
 Keep command files and module descriptors aligned with code. Update the owning reference for

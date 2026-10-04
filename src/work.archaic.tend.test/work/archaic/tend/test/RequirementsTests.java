@@ -23,6 +23,7 @@ public record RequirementsTests() implements TestSuite {
         cases.add(new PrivateGatewayMetrics());
         cases.add(new FlatMonitoringProvisioning());
         cases.add(new LlamaDeviceProjection());
+        cases.add(new CompleteGardenProjection());
         cases.add(new IngressIdempotence());
         cases.add(new AuthorizationActivationFails());
         cases.add(new EgressProjection());
@@ -388,6 +389,38 @@ record LlamaDeviceProjection() implements TestCase {
             assert cache.get("initial.uid").getAsString().equals("1000") && cache.get("initial.mode").getAsString().equals("0750") : "Download cache must retain explicit writable consumer ownership";
             int mutations = f.mock.mutations; f.engine.reconcile(desired);
             assert mutations == f.mock.mutations : "Unchanged model/device declarations must settle";
+        }
+    }
+}
+
+record CompleteGardenProjection() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (var f = new DeploymentFixture()) {
+            var prepared = f.garden.directory.resolve("prepared");
+            var recipe = java.nio.file.Path.of("../digital-garden/scripts/offline-fixture.py");
+            var process = new ProcessBuilder("python3", recipe.toString(), prepared.toString()).redirectErrorStream(true).start();
+            process.getOutputStream().close();
+            assert process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0 : "Pinned garden preparation must produce the public seven-workload state";
+            try (var paths = java.nio.file.Files.list(prepared)) {
+                for (var path : paths.toList()) java.nio.file.Files.copy(path, f.garden.author.resolve(path.getFileName()), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            for (var input : java.util.List.of("private-users", "incus-metrics")) {
+                String kind = input.equals("private-users") ? "users" : "metrics";
+                String uid = input.equals("private-users") ? "1000" : "65534";
+                var config = new JsonObject(); config.addProperty("user.tend.private", "test-controller");config.addProperty("user.tend.private.kind",kind);
+                config.addProperty("security.shifted","true"); config.addProperty("initial.uid",uid);config.addProperty("initial.gid",uid);config.addProperty("initial.mode","0700");
+                var volume = new JsonObject();volume.add("config",config);
+                f.mock.resources.put("/1.0/storage-pools/pool/volumes/custom/"+input,volume);
+            }
+            var desired = f.revision(java.nio.file.Files.readString(prepared.resolve("incus.xml")),"complete garden");
+            f.engine.reconcile(desired);
+            assert f.mock.resources.keySet().stream().filter(k -> k.startsWith("/1.0/instances/")).count() == 7 : "Exact committed recipe must declare and reconcile all seven workloads";
+            String caddy = RequirementsFixture.text(f,"Caddyfile");
+            assert caddy.contains("http://10.20.0.10:9180") && caddy.contains("reverse_proxy 10.20.0.16:3001") : "Gateway must bind private metrics and resolve protected Pi from its actual address";
+            String policy = RequirementsFixture.text(f,"access-control.json");
+            assert policy.contains("one_factor") && policy.contains("group:ai-users") && !policy.contains("two_factor") : "Fresh state must accept password or passkey under explicit AI group authorization";
+            int mutations=f.mock.mutations;f.engine.reconcile(desired);
+            assert mutations==f.mock.mutations : "Full public garden must converge without repeated mutations";
         }
     }
 }

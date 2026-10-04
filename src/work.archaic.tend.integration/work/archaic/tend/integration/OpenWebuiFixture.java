@@ -50,7 +50,7 @@ final class OpenWebuiFixture {
     String xml() throws IOException {
         String fingerprint = Files.readString(Path.of("out/incus-smoke/openwebui-fingerprint.txt")).strip();
         if (!fingerprint.matches("[a-f0-9]{64}")) throw new IOException("Expected cached Open WebUI OCI fingerprint");
-        return grafana.xml().replace("<secret name=\"oidc-signing\"", """
+        return FixtureXml.ordered(grafana.xml().replace("<secret name=\"oidc-signing\"", """
                 <secret name="webui-client" bytes="54"/><secret name="webui-session"/>
                 <secret name="webui-hash" kind="pbkdf2-sha512" source="webui-client"/>
                 <configuration name="webui-launch"><file path="/start.sh" source="webui-start.sh"/></configuration>
@@ -110,7 +110,7 @@ final class OpenWebuiFixture {
                 </instance>
                 <ingress name="webui" host="webui.garden.internal" instance="tend-ci-openwebui" device="eth0" port="8080"><public/></ingress>
                 </incus>
-                """.formatted(fingerprint));
+                """.formatted(fingerprint)));
     }
     void ready() throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(120).toNanos();

@@ -34,7 +34,7 @@ jobs:
   incus-smoke:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'incus-integration'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       TEND_DISPOSABLE_RUNNER: 'yes'
     steps:
@@ -67,6 +67,8 @@ jobs:
         run: bash scripts/incus-smoke/prepare-monitoring
       - name: Cache pinned Open WebUI OCI image
         run: bash scripts/incus-smoke/prepare-openwebui
+      - name: Prepare the empty rebuild project and private inputs
+        run: bash scripts/incus-smoke/prepare-rebuild
       - name: Prepare browser passkey probe
         run: |
           sudo apt-get update
@@ -77,7 +79,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          java @cmd/incus-smoke 2>&1 | tee out/incus-smoke/minau.txt
+          bash scripts/incus-smoke/test 2>&1 | tee out/incus-smoke/minau.txt
       - name: Capture Incus and OVN diagnostics
         if: always()
         run: bash scripts/incus-smoke/diagnostics

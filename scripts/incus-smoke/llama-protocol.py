@@ -8,8 +8,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 presets = configparser.ConfigParser(interpolation=None)
-presets.read('/etc/llama/models.ini')
-assert set(presets.sections()) == {'*', 'mimo', 'qwen36'}
+presets.read_string('[router]\n' + Path('/etc/llama/models.ini').read_text())
+assert set(presets.sections()) == {'router', '*', 'mimo', 'qwen36'}
 cache = Path('/var/cache/llama')
 (cache / 'permissions-proven').write_text('uid-1000-writable\n')
 loaded = None

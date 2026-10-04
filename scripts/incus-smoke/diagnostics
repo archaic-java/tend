@@ -88,3 +88,9 @@ done
 capture openwebui sudo incus config show tend-ci-openwebui --expanded
 capture openwebui-state sudo incus info tend-ci-openwebui
 # OAuth application and issuer logs are inspected privately; do not upload raw consoles.
+
+# Exact composition: config/state only, never OAuth consoles, private identities or session files.
+for name in caddy authelia grafana prometheus llama openwebui pi; do
+    capture "rebuild-$name" sudo incus config show "$name" --project tend-ci-rebuild --expanded
+    capture "rebuild-$name-state" sudo incus info "$name" --project tend-ci-rebuild
+done
