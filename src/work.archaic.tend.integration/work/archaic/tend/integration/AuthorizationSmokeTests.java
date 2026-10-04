@@ -172,23 +172,25 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                     assert keys.status == 200 && keys.body.getAsJsonArray("keys").size() == 1 : "Provider must publish Tend's generated signing key";
                     var flow = OidcFixture.flow();
                     var authorization = oidc.authorize(flow, OidcFixture.CALLBACK);
-                    assert authorization.status == 302 && authorization.location.getAuthority().equals("auth.garden.internal")
+                    assert authorization.status == 303 && authorization.location.getAuthority().equals("auth.garden.internal")
                             && !OidcFixture.query(authorization.location).containsKey("code") : "Anonymous OIDC request must require authentication without issuing a code";
                     assert browser.password("bob") == 200 : "Outside-group user must authenticate before testing OIDC policy";
                     oidc.session(browser.sessionCookies());
                     flow = OidcFixture.flow(); authorization = oidc.authorize(flow, OidcFixture.CALLBACK);
                     var parameters = OidcFixture.query(authorization.location);
-                    assert authorization.status == 302 && parameters.getOrDefault("error", "").equals("access_denied")
+                    assert authorization.status == 303 && parameters.getOrDefault("error", "").equals("access_denied")
                             && flow.state().equals(parameters.get("state")) && !parameters.containsKey("code") : "OIDC client policy must deny authenticated observers without issuing a code";
                     browser.clearSession(); login = browser.login("valid");
                     assert login.get("status").getAsInt() == 200 && login.get("ok").getAsBoolean() : "Permitted user must authenticate OIDC session with only the enrolled passkey";
                     oidc.session(browser.sessionCookies());
                     var unregistered = oidc.authorize(OidcFixture.flow(), "https://unregistered.example.invalid/callback");
-                    assert unregistered.status >= 400 && unregistered.location == null : "Provider must reject an unregistered callback without redirecting to it";
+                    assert unregistered.status == 303 && unregistered.location.getAuthority().equals("auth.garden.internal")
+                            && OidcFixture.query(unregistered.location).getOrDefault("error", "").equals("invalid_request")
+                            && !OidcFixture.query(unregistered.location).containsKey("code") : "Provider must reject an unregistered callback on its own error page without issuing a code";
                     flow = OidcFixture.flow(); authorization = oidc.authorize(flow, OidcFixture.CALLBACK);
                     var refused = oidc.consent(authorization.location, false);
                     parameters = OidcFixture.query(refused.location);
-                    assert refused.status == 302 && parameters.getOrDefault("error", "").equals("access_denied")
+                    assert refused.status == 303 && parameters.getOrDefault("error", "").equals("access_denied")
                             && !parameters.containsKey("code") : "Explicit refusal of consent must not issue a code";
                     flow = OidcFixture.flow(); authorization = oidc.authorize(flow, OidcFixture.CALLBACK);
                     var callback = oidc.consent(authorization.location, true);
@@ -245,6 +247,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                     claims = OidcToken.verify(tokens.body.get("id_token").getAsString(), restartedKeys.body, OidcFixture.ISSUER,
                             OidcFixture.CLIENT, flow.nonce(), tokens.body.get("access_token").getAsString(), java.time.Instant.now());
                     assert claims.get("preferred_username").getAsString().equals("carol") : "Restarted provider must issue a valid token for the same passkey user";
+                    assert !oidc.leakedInEvidence() : "Generated client secret, sessions, codes and tokens must stay out of service logs and command evidence";
                     trail.note("OIDC code exchange, signed identity/group claims, consent, negative requests and persistent credentials verified");
                     System.out.println("OIDC smoke: passkey session and explicit consent issue a verifiable ID token; groups, client authentication, PKCE, single-use codes and restart persistence verified.");
                 }

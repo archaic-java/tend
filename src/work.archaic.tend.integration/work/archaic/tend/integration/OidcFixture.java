@@ -28,9 +28,12 @@ final class OidcFixture implements AutoCloseable {
         String error() { return body.has("error") ? body.get("error").getAsString() : ""; }
     }
     private final HttpClient http;
+    private final Path directory;
+    private final Set<String> privateValues = new HashSet<>();
     private final CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER);
     private final String secret;
     OidcFixture(Path directory) throws Exception {
+        this.directory = directory;
         var trust = KeyStore.getInstance(KeyStore.getDefaultType()); trust.load(null, null);
         try (var input = Files.newInputStream(directory.resolve("root.crt"))) {
             trust.setCertificateEntry("caddy", CertificateFactory.getInstance("X.509").generateCertificate(input));
@@ -48,6 +51,7 @@ final class OidcFixture implements AutoCloseable {
             if (!pull.waitFor(10, TimeUnit.SECONDS) || pull.exitValue() != 0) throw new IOException("Cannot read mounted OIDC client credential");
             secret = Files.readString(file).strip();
             if (!secret.matches("[A-Za-z0-9_-]{72}")) throw new IOException("Unexpected OIDC client credential format");
+            privateValues.add(secret);
         } catch (Exception e) { http.shutdownNow(); throw e; }
         finally { if (pull.isAlive()) pull.destroyForcibly(); Files.deleteIfExists(file); }
     }
@@ -59,6 +63,7 @@ final class OidcFixture implements AutoCloseable {
             cookie.setVersion(0); cookie.setDomain(value.get("domain").getAsString());
             cookie.setPath(value.get("path").getAsString()); cookie.setSecure(true);
             cookies.getCookieStore().add(URI.create(ISSUER), cookie);
+            privateValues.add(cookie.getValue());
         }
     }
     static Flow flow() { return new Flow(random(), random(), random()); }
@@ -93,7 +98,7 @@ final class OidcFixture implements AutoCloseable {
     }
     static String code(Reply reply, Flow flow) throws IOException {
         var parameters = query(reply.location);
-        if (reply.status != 302 || !reply.location.toString().startsWith(CALLBACK + "?") || !flow.state().equals(parameters.get("state"))
+        if (reply.status != 303 || !reply.location.toString().startsWith(CALLBACK + "?") || !flow.state().equals(parameters.get("state"))
                 || parameters.containsKey("error") || parameters.getOrDefault("code", "").isBlank())
             throw new IOException("OIDC callback URI, state or authorization code is invalid");
         return parameters.get("code");
@@ -109,6 +114,12 @@ final class OidcFixture implements AutoCloseable {
             var response = http.send(builder.timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.ofString());
             JsonObject body = response.body().stripLeading().startsWith("{") ? JsonParser.parseString(response.body()).getAsJsonObject() : new JsonObject();
             URI location = response.headers().firstValue("Location").map(target::resolve).orElse(null);
+            for (String key : List.of("id_token", "access_token")) if (body.has(key)) privateValues.add(body.get(key).getAsString());
+            if (location != null && location.toString().startsWith(CALLBACK + "?")) {
+                var parameters = query(location);
+                if (parameters.containsKey("code")) privateValues.add(parameters.get("code"));
+            }
+            for (var cookie : cookies.getCookieStore().getCookies()) privateValues.add(cookie.getValue());
             return new Reply(response.statusCode(), body, location);
         } catch (InterruptedException e) { throw e; }
         catch (Exception e) { throw new IOException("Private OIDC HTTP probe failed; response details withheld"); }
@@ -125,5 +136,22 @@ final class OidcFixture implements AutoCloseable {
     }
     private static String form(Map<String, String> values) { return values.entrySet().stream().map(e -> encode(e.getKey()) + "=" + encode(e.getValue())).collect(java.util.stream.Collectors.joining("&")); }
     private static String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
-    public void close() { http.shutdownNow(); cookies.getCookieStore().removeAll(); }
+    boolean leakedInEvidence() throws Exception {
+        Path file = Files.createTempFile(directory, "oidc-log-", ".private",
+                java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
+        var pull = new ProcessBuilder("sudo", "-n", "incus", "exec", AuthorizationFixture.AUTH, "--", "cat", "/var/log/tend-authelia.log")
+                .redirectErrorStream(true).redirectOutput(file.toFile()).start();
+        pull.getOutputStream().close();
+        try {
+            if (!pull.waitFor(10, TimeUnit.SECONDS) || pull.exitValue() != 0) throw new IOException("Cannot inspect private OIDC log evidence");
+            List<Path> evidence = new ArrayList<>(); evidence.add(file);
+            try (var paths = Files.walk(Path.of("out/incus-smoke"))) { evidence.addAll(paths.filter(Files::isRegularFile).toList()); }
+            for (var path : evidence) {
+                String text = Files.readString(path);
+                for (String value : privateValues) if (value.length() >= 16 && text.contains(value)) return true;
+            }
+            return false;
+        } finally { if (pull.isAlive()) pull.destroyForcibly(); Files.deleteIfExists(file); }
+    }
+    public void close() { http.shutdownNow(); cookies.getCookieStore().removeAll(); privateValues.clear(); }
 }
