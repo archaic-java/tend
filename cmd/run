@@ -1,3 +1,3 @@
 --module-path out:lib/bin
---add-modules work.archaic.peep
+--add-modules work.archaic.culpa
 -m work.archaic.tend/work.archaic.tend.Main
