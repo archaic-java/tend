@@ -76,7 +76,7 @@ Incus version and resolve any discrepancy against the real API rather than relax
 1. Review the named resource contract and its offline projection tests.
 2. Validate generated Caddy/Authelia configurations against pinned application versions, then add readiness, nested files and reload.
 3. Add explicit registry sources and safe image replacement with retained data.
-4. RSA-3072 signing keys and PBKDF2-SHA512 client-secret derivation now cover the homelab OIDC credentials. The integration fixture now tests a real authorization-code exchange; actual Grafana/Open WebUI deployment follows.
+4. RSA-3072 signing keys and PBKDF2-SHA512 client-secret derivation now cover the homelab OIDC credentials. The integration fixture now tests a real authorization-code exchange; the real Grafana OCI consumer is now covered, and Open WebUI deployment follows.
 5. Extend the verified real-Incus CLI path to OCI bootstrap and generated application policies.
 
 Backup/export and any changes to the existing homelab remain outside this proof of concept.
@@ -113,4 +113,7 @@ automation uses JDK HTTP/WebSocket and the existing Gson module; no new controll
 The same case exercises confidential OIDC over verified HTTPS using a small JDK test client.
 It validates RS256 with the published JWKS and issuer/audience/nonce/expiry claims, checks
 userinfo and groups, rejects bad client secrets and PKCE verifiers, and verifies single-use codes.
-OCI controller deployment, two-factor and actual Grafana/Open WebUI deployment remain unverified.
+The same browser case deploys the actual Grafana OCI consumer and verifies its passkey OIDC
+login, identity/admin roles, independent group and strict-role denial, and persistent user/session
+state across restart and Git activation. OCI controller deployment, two-factor and Open WebUI
+deployment remain unverified.

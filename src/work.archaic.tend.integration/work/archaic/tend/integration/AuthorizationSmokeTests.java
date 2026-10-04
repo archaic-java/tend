@@ -251,6 +251,82 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                     trail.note("OIDC code exchange, signed identity/group claims, consent, negative requests and persistent credentials verified");
                     System.out.println("OIDC smoke: passkey session and explicit consent issue a verifiable ID token; groups, client authentication, PKCE, single-use codes and restart persistence verified.");
                 }
+                var grafana = new GrafanaFixture(incus, garden, fixture);
+                garden.source("oidc.yml", grafana.provider());
+                garden.source("grafana.ini", grafana.configuration("admins", "Viewer"));
+                garden.source("root.crt", Files.readString(garden.directory.resolve("root.crt")));
+                String grafanaRevision = garden.commitXml(grafana.xml(), "Deploy real Grafana OCI consumer with confidential OIDC");
+                garden.reconcile(); fixture.ready(); grafana.dns(); grafana.ready();
+                assert garden.lastSuccess().equals(grafanaRevision) : "Tend must activate the OCI consumer and its shared generated credentials";
+                var identity = incus.run(java.time.Duration.ofSeconds(10), "exec", GrafanaFixture.INSTANCE, "--", "stat", "-c", "%u:%g:%a", "/etc/tend-grafana-client/value");
+                assert identity.status() == 0 && identity.output().strip().equals("472:0:400") : "OCI consumer must receive a private client secret readable by its declared UID";
+                browser.privateValues(); browser.clearSession();
+                browser.navigate(GrafanaFixture.ORIGIN + "/api/health", GrafanaFixture.ORIGIN);
+                assert browser.applicationUser().get("status").getAsInt() == 401 : "Anonymous browser must not have a Grafana identity";
+                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER); browser.probe();
+                assert browser.evaluate("new URL(location.href).searchParams.has('flow_id')").getAsBoolean() : "Anonymous Grafana login must redirect to a real provider authentication flow";
+                login = browser.login("valid");
+                assert login.get("status").getAsInt() == 200 && login.get("ok").getAsBoolean() : "Grafana flow must accept Carol's enrolled passkey without a password";
+                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
+                var pending = browser.consent();
+                assert pending.get("client").getAsString().equals(GrafanaFixture.CLIENT) && !pending.get("login").getAsBoolean() : "Passkey session must satisfy Grafana's explicit one-factor OIDC policy";
+                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
+                var user = browser.applicationUser();
+                assert user.get("status").getAsInt() == 200 && user.get("login").getAsString().equals("carol")
+                        && user.get("name").getAsString().equals("Carol") && user.get("email").getAsString().equals("carol@example.invalid")
+                        && user.get("admin").getAsBoolean() : "Grafana itself must redeem the PKCE code, validate the ID token and map admins to GrafanaAdmin";
+                int userId = user.get("id").getAsInt();
+                var orgs = browser.evaluate("(async () => {const r=await fetch('/api/user/orgs',{signal:AbortSignal.timeout(8000)});return {status:r.status,orgs:await r.json()};})()").getAsJsonObject();
+                assert orgs.get("status").getAsInt() == 200 && orgs.getAsJsonArray("orgs").size() == 1
+                        && orgs.getAsJsonArray("orgs").get(0).getAsJsonObject().get("role").getAsString().equals("Admin") : "Grafana must assign the mapped organization admin role";
+                String grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
+                garden.reconcile();
+                assert garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Unchanged OCI desired state must not restart Grafana";
+                incus.require("restart", GrafanaFixture.INSTANCE); grafana.ready();
+                user = browser.applicationUser();
+                assert user.get("status").getAsInt() == 200 && user.get("id").getAsInt() == userId && user.get("admin").getAsBoolean() : "Grafana session and user identity must survive restart with the persistent data volume and secret key";
+                browser.privateValues(); browser.clearSession(); browser.portal();
+                assert browser.password("bob") == 200 : "Observer must authenticate before testing Grafana's own admission rules";
+                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
+                pending = browser.consent();
+                assert pending.get("client").getAsString().equals(GrafanaFixture.CLIENT) && !pending.get("login").getAsBoolean() : "Provider must permit the observer so the consumer's group check is exercised";
+                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
+                user = browser.applicationUser();
+                assert user.get("status").getAsInt() == 401 : "Grafana must reject a provider-authenticated user outside its allowed groups";
+                assert !grafana.leakedInEvidence(browser.privateValues()) : "Group denial must not leak credentials into application logs or command evidence";
+                grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
+                garden.source("grafana.ini", grafana.configuration("admins observers", "Viewer"));
+                String admittedRevision = garden.commitXml(grafana.xml(), "Admit the observer as Viewer through a group-list-only change");
+                garden.reconcile(); grafana.ready();
+                assert garden.lastSuccess().equals(admittedRevision) && !garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Git group-list change must activate Grafana";
+                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
+                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
+                user = browser.applicationUser();
+                assert user.get("status").getAsInt() == 200 && user.get("login").getAsString().equals("bob") && !user.get("admin").getAsBoolean() : "Changing only the allowed groups must admit the same observer with a valid non-admin role";
+                orgs = browser.evaluate("(async () => {const r=await fetch('/api/user/orgs',{signal:AbortSignal.timeout(8000)});return {status:r.status,orgs:await r.json()};})()").getAsJsonObject();
+                assert orgs.get("status").getAsInt() == 200 && orgs.getAsJsonArray("orgs").size() == 1
+                        && orgs.getAsJsonArray("orgs").get(0).getAsJsonObject().get("role").getAsString().equals("Viewer") : "The admitted observer must receive exactly the mapped Viewer organization role";
+                browser.privateValues(); browser.clearSession(); browser.portal();
+                assert browser.password("bob") == 200 : "Observer must begin a fresh provider session before the strict-role check";
+                grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
+                garden.source("grafana.ini", grafana.configuration("admins observers", ""));
+                String strictRevision = garden.commitXml(grafana.xml(), "Exercise strict role rejection independently of group admission");
+                garden.reconcile(); grafana.ready();
+                assert garden.lastSuccess().equals(strictRevision) && !garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Git configuration changes must activate the real OCI consumer";
+                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
+                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
+                user = browser.applicationUser();
+                assert user.get("status").getAsInt() == 401 : "An allowed group with no mapped role must still be denied under role_attribute_strict";
+                browser.privateValues(); browser.clearSession(); browser.portal();
+                login = browser.login("valid");
+                assert login.get("status").getAsInt() == 200 : "Git activation must preserve the registered passkey";
+                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
+                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
+                user = browser.applicationUser();
+                assert user.get("status").getAsInt() == 200 && user.get("id").getAsInt() == userId && user.get("admin").getAsBoolean() : "Fresh OIDC login after Git activation must retain the same Grafana user and admin mapping";
+                assert !grafana.leakedInEvidence(browser.privateValues()) : "Grafana secrets, browser sessions, authorization codes and JWTs must stay out of service logs and uploaded evidence";
+                trail.note("Real Grafana OCI login, identity, group/strict-role decisions and persistent data verified");
+                System.out.println("Grafana smoke: OCI consumer completes passkey OIDC login, maps identity and admin roles, denies outside-group and unmapped-role users, and preserves identity across restart and Git activation.");
             }
 
         }

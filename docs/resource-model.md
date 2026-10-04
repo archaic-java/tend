@@ -175,7 +175,9 @@ one-factor proxy group authorization through password and passkey login now have
 The passkey fixture requires discoverability and user verification, but `one_factor` permits
 password login too; Tend does not enforce exclusive use of passkeys. A confidential OIDC test
 client verifies discovery, explicit consent, group policy, PKCE, signed ID tokens and userinfo.
-Two-factor and actual Grafana/Open WebUI deployment remain unverified.
+The same fixture deploys the real Grafana OCI image: passkey OIDC login, application identity
+and admin roles, independent group/strict-role denial, and persistence across restart and Git
+activation. Two-factor and Open WebUI deployment remain unverified.
 
 ## Authoritative adapter contracts
 

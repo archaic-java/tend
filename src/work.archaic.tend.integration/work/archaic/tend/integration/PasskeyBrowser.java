@@ -19,6 +19,7 @@ final class PasskeyBrowser implements AutoCloseable {
     private final BlockingQueue<JsonObject> responses = new LinkedBlockingQueue<>();
     private int sequence;
     private String authenticator;
+    private final Set<String> privateValues = ConcurrentHashMap.newKeySet();
     private final StringBuilder navigationEvidence = new StringBuilder();
     PasskeyBrowser(IncusCommands incus, Path directory) throws Exception {
         this.directory = directory.resolve("browser");
@@ -84,6 +85,15 @@ final class PasskeyBrowser implements AutoCloseable {
                                     else if (message.has("method")) {
                                         String method = message.get("method").getAsString();
                                         var parameters = message.getAsJsonObject("params");
+                                        if (method.equals("Network.requestWillBeSent")) {
+                                            var uri = URI.create(parameters.getAsJsonObject("request").get("url").getAsString());
+                                            if (uri.getHost() != null && uri.getHost().endsWith(".garden.internal")) {
+                                                try {
+                                                    String code = OidcFixture.query(uri).get("code");
+                                                    if (code != null) privateValues.add(code);
+                                                } catch (IOException malformedQuery) { navigationEvidence.append(" malformedQuery"); }
+                                            }
+                                        }
                                         if (navigationEvidence.length() < 3000) {
                                             if (method.equals("Network.loadingFailed")) navigationEvidence.append(" loadingFailed=").append(parameters.get("errorText")).append("; blocked=").append(parameters.get("blockedReason")).append("; canceled=").append(parameters.get("canceled"));
                                             else if (method.equals("Security.certificateError")) navigationEvidence.append(" certificateError=").append(parameters.get("errorType"));
@@ -128,6 +138,70 @@ final class PasskeyBrowser implements AutoCloseable {
         if (result.has("exceptionDetails")) throw new IOException("Browser probe evaluation failed (private details withheld)");
         var value = result.getAsJsonObject("result");
         return value.has("value") ? value.get("value") : JsonNull.INSTANCE;
+    }
+    void navigate(String url, String origin) throws Exception {
+        var parameters = new JsonObject(); parameters.addProperty("url", url);
+        var reply = call("Page.navigate", parameters);
+        if (reply.has("errorText")) throw new IOException("Application browser navigation failed (private URL withheld)");
+        long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+        while (System.nanoTime() < deadline) {
+            try {
+                if (evaluate("location.origin === " + new Gson().toJson(origin) + " && document.readyState === 'complete'").getAsBoolean()) return;
+            } catch (IOException transientNavigation) { /* Document execution context can change during redirects. */ }
+            Thread.sleep(100);
+        }
+        throw new IOException("Application browser did not reach the expected origin");
+    }
+    void portal() throws Exception {
+        navigate("https://auth.garden.internal/", "https://auth.garden.internal");
+        probe();
+    }
+    void probe() throws Exception { evaluate(Files.readString(Path.of("scripts/incus-smoke/passkey-probe.js"))); }
+    JsonObject consent() throws Exception {
+        return evaluate("""
+                (async () => {
+                    const flow = new URL(location.href).searchParams.get('flow_id');
+                    const response = await fetch('/api/oidc/consent?flow_id=' + encodeURIComponent(flow), {signal:AbortSignal.timeout(8000)});
+                    const body = await response.json();
+                    if (response.status !== 200 || !body.data) return {status:response.status};
+                    return {status:response.status,client:body.data.client_id,login:body.data.require_login};
+                })()
+                """).getAsJsonObject();
+    }
+    void acceptConsent(String client, String destination) throws Exception {
+        // Keep the authorization code and callback within the real browser; Grafana redeems it.
+        String redirect = evaluate("""
+                (async () => {
+                    const flow = new URL(location.href).searchParams.get('flow_id');
+                    const info = await fetch('/api/oidc/consent?flow_id=' + encodeURIComponent(flow), {signal:AbortSignal.timeout(8000)});
+                    const data = (await info.json()).data;
+                    if (info.status !== 200 || data.require_login || data.client_id !== %s) throw Error('consent');
+                    const response = await fetch('/api/oidc/consent', {method:'POST',signal:AbortSignal.timeout(8000),
+                        headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify({flow_id:flow,client_id:data.client_id,consent:true,pre_configure:false,claims:data.claims})});
+                    if (response.status !== 200) throw Error('consent');
+                    return (await response.json()).data.redirect_uri;
+                })()
+                """.formatted(new Gson().toJson(client))).getAsString();
+        URI uri = URI.create(redirect);
+        if (!uri.getScheme().equals("https") || !uri.getAuthority().equals("auth.garden.internal") || !uri.getPath().equals("/api/oidc/authorization"))
+            throw new IOException("Unexpected consent continuation");
+        navigate(redirect, destination);
+    }
+    JsonObject applicationUser() throws Exception {
+        return evaluate("""
+                (async () => {
+                    const response = await fetch('/api/user', {signal:AbortSignal.timeout(8000)});
+                    const body = await response.json();
+                    return {status:response.status,id:body.id,login:body.login,email:body.email,name:body.name,
+                        admin:body.isGrafanaAdmin,message:body.message};
+                })()
+                """).getAsJsonObject();
+    }
+    Set<String> privateValues() throws Exception {
+        var cookies = call("Network.getAllCookies", new JsonObject()).getAsJsonArray("cookies");
+        for (var cookie : cookies) privateValues.add(cookie.getAsJsonObject().get("value").getAsString());
+        return Set.copyOf(privateValues);
     }
     private JsonObject call(String method, JsonObject parameters) throws Exception {
         var request = new JsonObject(); request.addProperty("id", ++sequence); request.addProperty("method", method); request.add("params", parameters);

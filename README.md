@@ -46,7 +46,9 @@ assertions, and checks credential persistence across restart and Git activation.
 remains supported under the explicit `one_factor` policy. The same case then exercises a
 confidential OIDC client with generated signing keys and shared client-secret/hash mounts:
 explicit consent, PKCE code exchange, JWKS signature and claim validation, failed requests,
-and credential persistence across restart.
+and credential persistence across restart. It then deploys the real Grafana OCI image and verifies
+passkey OIDC login, application identity/admin roles, group and strict-role denial, and persistence
+across restart and Git configuration activation.
 
 The suite is separate from `cmd/test` and needs no homelab credentials or nested VMs. CI uploads
 command output, image fingerprint, package versions and Incus/OVN diagnostics on every run, then
@@ -85,7 +87,8 @@ See [docs/resource-model.md](docs/resource-model.md) for XML, Kubernetes compari
 boundaries and the remaining homelab requirements. Policy generation is tested offline; OVN
 packet filtering, Tend reconciliation and public Caddy HTTPS routing are verified on the CI runner.
 Authelia startup, one-factor proxy authorization and a confidential OIDC protocol exchange are
-verified. Two-factor and deployment of actual OIDC consumers such as Open WebUI remain unverified.
+verified. Grafana OCI deployment and its OIDC integration are covered by the same fixture. Two-factor and
+Open WebUI deployment remain unverified.
 
 ## Run a controller
 

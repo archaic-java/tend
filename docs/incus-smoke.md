@@ -100,7 +100,7 @@ Alpine's boot-time `/run` tmpfs would hide disks mounted below that directory. P
 cookies, user databases and secret bytes are never uploaded; private fixture accounts are cached
 only in a disposable local image and login bodies reside in a private temporary directory.
 
-The authorization case finally commits an OIDC configuration and generated RSA signing key,
+The authorization case then commits an OIDC configuration and generated RSA signing key,
 HMAC value and client-secret/hash declarations. Authelia loads the PEM and hash with its native
 `template` filter; the confidential test client reads the raw value from its actual Incus mount.
 A JDK HTTP client trusts only the disposable public CA, retains hostname checks and follows no
@@ -116,7 +116,34 @@ callback, mismatched state, wrong client secret, wrong PKCE verifier, replayed c
 ID-token signature/issuer/audience/nonce/expiry. Restart must preserve signing keys and successful
 exchange. Tokens, codes, cookies and client credential stay in process memory or private temporary
 files outside the artifact directory; failure messages omit their bodies. This is a narrow protocol
-test client, not a JOSE library or a deployed Open WebUI/Grafana instance.
+test client, not a JOSE library.
+
+The same case next deploys Grafana 13.1.0 from a digest-pinned cached OCI image, using UID 472,
+a persistent custom data volume and read-only configuration/secret mounts. Tend generates the
+admin password, encryption key, confidential client secret and matching Authelia hash. A public
+Caddy route forwards to Grafana, which performs its own OIDC authorization. Grafana trusts the
+fixture CA explicitly, uses PKCE-S256 and client-secret Basic authentication, and validates the
+ID token against the provider JWKS. The configuration supplies both `tls_client_ca` and
+`SSL_CERT_FILE`: this Grafana version fetches JWKS through Go's default HTTP client.
+Operator bootstrap starts a fixture-only dnsmasq on the
+gateway for the private provider domain. The OCI guest selects it through Incus’s existing
+`oci.dns.nameservers` configuration; Tend gains no exec or DNS feature. Incus manages the
+OCI guest’s read-only `/etc/hosts` and `/etc/resolv.conf` files.
+
+The real browser follows Grafana’s login redirect, authenticates with Carol’s enrolled passkey,
+accepts explicit consent and returns through Grafana’s callback. Grafana itself exchanges the
+code. Its user API must report Carol’s actual name/email/login, global admin status and Admin
+organization role. The provider permits Bob, then Grafana independently denies him through
+`allowed_groups` while Bob has a valid Viewer role. A Git change to only the group list then
+admits the same observer as Viewer, without global admin privileges. A second Git change to
+only the role mapping replaces that fallback with an empty role, independently denying Bob.
+Grafana accepts `None` as a valid role; the homelab's admin-group allowlist is its admission rule.
+An explicitly configured private Grafana log file is inspected for credential leakage.
+No-op reconciliation preserves the process, restart preserves
+the session, and a fresh login after Git activation preserves the same user ID and admin role.
+Browser cookies/codes and mounted secret values are checked against command evidence and
+privately read application logs. Grafana’s raw console is never uploaded, including on failure.
+Open WebUI, physical authenticators and two-factor remain outside this fixture.
 
 The cases use different resources and evidence directories so concurrent Minau execution is safe.
 TLS keys, private Java arguments and controller state are outside the uploaded artifact. The test
@@ -133,14 +160,19 @@ uses the normal JSSE client/trust stores and hostname verification; there is no 
   and image information are retained in `image.txt` for each run.
 - Caddy: official `caddy_2.11.7_linux_amd64.tar.gz`, SHA-256
   `727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b`. Bootstrap verifies the
-  archive, installs curl from Alpine 3.22, and records curl's version and derived image fingerprints.
-  Bootstrap fetches signed curl packages in `alpine:3.22` through the host Docker network,
+  archive, installs curl and fixture DNS packages from Alpine 3.22, and records versions and derived image fingerprints.
+  Bootstrap fetches signed curl/dnsmasq packages in `alpine:3.22` through the host Docker network,
   records its image digest and package checksums, and installs them offline in Incus. OVN guests
   require no internet access. Caddy's private CA keys
   remain inside its disposable root disk; only its public root certificate is observed.
 - Authelia: official `authelia-v4.39.28-linux-amd64-musl.tar.gz`, SHA-256
   `ce2526b633ce3eec06680fae2f26060dc8cef3a92cdbc376410b28bcca6c97e1`. Its CLI generates a
   random private fixture password and Argon2 digest; login bodies and the user database stay private.
+- Grafana: official `grafana/grafana:13.1.0` OCI index digest
+  `sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63`.
+  Operator bootstrap uses Incus’s OCI remote with Ubuntu `skopeo`/`umoci`, records the cache
+  fingerprint, and Tend creates the application from that fingerprint. No registry pull feature
+  is added to Tend.
 - Browser: the GitHub Ubuntu runner's installed `google-chrome`, with its version recorded.
   `libnss3-tools` supplies `certutil`; the JDK WebSocket/HTTP client and already-pinned Gson
   drive CDP without a browser automation library or new controller dependency.
@@ -171,9 +203,11 @@ bash scripts/incus-smoke/install
 bash scripts/incus-smoke/prepare
 bash scripts/incus-smoke/prepare-ingress
 bash scripts/incus-smoke/prepare-authelia
+bash scripts/incus-smoke/prepare-grafana
 bash scripts/incus-smoke/authenticate
 sudo apt-get install -y libnss3-tools
 google-chrome --version >out/incus-smoke/browser-version.txt
+echo '127.0.0.1 auth.garden.internal' | sudo tee -a /etc/hosts >/dev/null
 java @cmd/incus-smoke
 bash scripts/incus-smoke/diagnostics
 bash scripts/incus-smoke/cleanup

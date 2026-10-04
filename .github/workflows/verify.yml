@@ -45,6 +45,8 @@ jobs:
         run: bash scripts/incus-smoke/prepare-ingress
       - name: Cache private Authelia fixture
         run: bash scripts/incus-smoke/prepare-authelia
+      - name: Cache pinned Grafana OCI image
+        run: bash scripts/incus-smoke/prepare-grafana
       - name: Authorize controller HTTPS client
         run: bash scripts/incus-smoke/authenticate
       - name: Prepare browser passkey probe
