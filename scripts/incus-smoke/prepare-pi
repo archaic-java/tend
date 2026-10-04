@@ -18,6 +18,5 @@ if sudo iptables -nL DOCKER-USER >/dev/null 2>&1; then
     sudo iptables -I DOCKER-USER -o tend-ci-pi-net -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 fi
 timeout 240 sudo incus image copy images:debian/13/cloud local: --vm --alias tend-ci-pi
-sudo incus image info tend-ci-pi >out/incus-smoke/pi-image.txt
-sudo incus image info tend-ci-pi --format=json | python3 -c \
-    'import json,sys; print(json.load(sys.stdin)["fingerprint"])' >out/incus-smoke/pi-fingerprint.txt
+sudo incus image info tend-ci-pi --vm >out/incus-smoke/pi-image.txt
+sed -n 's/^Fingerprint: //p' out/incus-smoke/pi-image.txt >out/incus-smoke/pi-fingerprint.txt
