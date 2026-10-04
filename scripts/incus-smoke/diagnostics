@@ -47,6 +47,10 @@ capture auth-caddyfile sudo incus exec tend-ci-auth-gateway -- cat /etc/caddy/Ca
 capture authelia-log sudo incus exec tend-ci-auth-service -- cat /var/log/tend-authelia.log
 capture authelia-service sudo incus exec tend-ci-auth-service -- rc-service tend-authelia status
 capture access-control sudo incus exec tend-ci-auth-service -- cat /etc/tend-authorization/access-control.json
+capture grafana sudo incus config show tend-ci-grafana --expanded
+capture grafana-state sudo incus info tend-ci-grafana
+capture grafana-data sudo incus storage volume show tend-ci-pool tend-ci-grafana-data
+# Grafana's console is inspected privately by the case; do not upload OAuth error logs.
 # Never capture user databases, secret files, cookies, login bodies or private keys.
 capture volumes sudo incus storage volume list tend-ci-pool
 capture operations sudo incus operation list

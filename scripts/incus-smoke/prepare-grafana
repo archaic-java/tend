@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Operator bootstrap only: cache the same OCI application used by the homelab.
+set -euo pipefail
+[[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]]
+sudo apt-get install -y --no-install-recommends skopeo umoci
+sudo incus remote add tend-ci-docker https://docker.io --protocol=oci
+image='grafana/grafana@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63'
+printf '%s\n' "$image" >out/incus-smoke/grafana-oci-image.txt
+timeout 180 sudo incus image copy "tend-ci-docker:$image" local: --alias tend-ci-grafana
+sudo incus image info tend-ci-grafana >out/incus-smoke/grafana-image.txt
+sudo incus image info tend-ci-grafana | sed -n 's/^Fingerprint: //p' >out/incus-smoke/grafana-fingerprint.txt
