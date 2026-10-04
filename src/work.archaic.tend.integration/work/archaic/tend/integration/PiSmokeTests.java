@@ -50,12 +50,16 @@ record PiCloudVmInstallsAndRetainsData() implements TestCase {
                 incus.require("exec", PiFixture.INSTANCE, "--", "runuser", "-u", "pi", "--", "/bin/sh", "-c", "printf 'pi-smoke-persistent\\n' > '" + path + "/tend-smoke.marker'");
             }
             incus.require("exec", PiFixture.INSTANCE, "--", "runuser", "-u", "pi", "--", "test", "!", "-w", "/etc/homelab-pi/models.json");
-            String started = garden.started(PiFixture.INSTANCE);
+            var boot = incus.run(Duration.ofSeconds(15), "exec", PiFixture.INSTANCE, "--", "cat", "/proc/sys/kernel/random/boot_id");
+            assert boot.status() == 0 && boot.output().strip().matches("[a-f0-9-]{36}") : "Guest kernel must expose its boot identity";
             garden.reconcile();
-            assert garden.started(PiFixture.INSTANCE).equals(started) : "An unchanged Git pass must not reboot the Pi VM";
+            var unchangedBoot = incus.run(Duration.ofSeconds(15), "exec", PiFixture.INSTANCE, "--", "cat", "/proc/sys/kernel/random/boot_id");
+            assert unchangedBoot.status() == 0 && unchangedBoot.output().equals(boot.output()) : "An unchanged Git pass must not reboot the Pi VM";
             assert pi.health().status() == 0 : "No-op reconciliation must leave Pi serving requests";
             incus.require("restart", PiFixture.INSTANCE, "--timeout=60");
             assert pi.agent().status() == 0 : "VM agent must return after an explicit restart";
+            var restartedBoot = incus.run(Duration.ofSeconds(15), "exec", PiFixture.INSTANCE, "--", "cat", "/proc/sys/kernel/random/boot_id");
+            assert restartedBoot.status() == 0 && !restartedBoot.output().equals(boot.output()) : "The persistence check must follow a real VM reboot";
             assert pi.installed().status() == 0 : "Completed cloud-init must remain successful after restart";
             assert pi.ready().status() == 0 : "Systemd must start the harness again after restart";
             for (String path : List.of("/var/lib/pi", "/workspace")) {
