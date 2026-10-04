@@ -18,6 +18,9 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
             garden.reconcile();
             assert garden.lastSuccess().equals(first) : "Tend must activate the protected ingress main commit";
             fixture.prepare();
+            String privateUsers = fixture.privateUsers();
+            assert fixture.privateDelivery().strip().equals("0:0:700\n0:0:400") : "Operator user volume must use explicit private directory/file metadata";
+            assert incus.run(java.time.Duration.ofSeconds(10), "exec", AuthorizationFixture.AUTH, "--", "touch", "/etc/private-users/forbidden").status() != 0 : "Private user delivery must be read-only";
             try (var browser = new PasskeyBrowser(incus, garden.directory)) {
                 String requests = fixture.requests();
                 var anonymous = fixture.request(null);
@@ -64,6 +67,15 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 carol = fixture.request("carol");
                 assert carol.status() == 0 && carol.output().contains("user=carol") && carol.output().contains("status=200") : "New main must admit admins";
 
+                fixture.updatePrivateGroups(true);
+                assert fixture.login("alice").output().strip().equals("200") : "Updated private user must log in after bounded activation";
+                assert fixture.request("alice").output().contains("status=200") : "Operator group update must activate without a public Git credential change";
+                assert fixture.login("bob").output().strip().equals("200") && fixture.request("bob").output().contains("status=403") : "Updating one user's groups must keep unrelated denied accounts denied";
+                fixture.updatePrivateGroups(false);
+                assert fixture.privateUsers().equals(privateUsers) : "Restoring operator groups must preserve private identity and password hash";
+                garden.reconcile();
+                assert fixture.privateUsers().equals(privateUsers) : "Reconciliation must never overwrite operator-issued users";
+                trail.note("Private read-only users: explicit metadata, bounded group replacement and retained outsider denial");
                 String generated = fixture.policy();
                 assert generated.contains("group:admins") : "Mounted policy must reflect the new Git declaration";
                 fixture.drift(generated.replace("group:admins", "group:observers"));
@@ -329,6 +341,9 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 System.out.println("Grafana smoke: OCI consumer completes passkey OIDC login, maps identity and admin roles, denies outside-group and unmapped-role users, and preserves identity across restart and Git activation.");
             }
 
+            assert fixture.privateUsers().equals(privateUsers) : "All configuration activations and process restarts must preserve operator users";
+            assert fixture.privateEvidenceExcluded() : "Private user hashes and passwords must be absent from Git and uploaded evidence";
+            assert !Files.readString(garden.directory.resolve("author/incus.xml")).contains(privateUsers) : "Private user database must never enter public desired XML";
         }
     }
 }

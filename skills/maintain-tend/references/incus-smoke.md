@@ -200,135 +200,84 @@ uses the normal JSSE client/trust stores and hostname verification; there is no 
 
 ## Inputs and evidence
 
-- GitHub runner OS label: `ubuntu-24…16112 tokens truncated…ng();
-                    var claims = OidcToken.verify(token, keys.body, OidcFixture.ISSUER, OidcFixture.CLIENT, flow.nonce(), access, java.time.Instant.now());
-                    assert claims.get("preferred_username").getAsString().equals("carol") && claims.get("name").getAsString().equals("Carol")
-                            && claims.get("email").getAsString().equals("carol@example.invalid") && claims.getAsJsonArray("groups").size() == 1
-                            && claims.getAsJsonArray("groups").get(0).getAsString().equals("admins") : "Signed ID token must carry the authenticated user's actual identity and groups";
-                    var userinfo = oidc.userinfo(access);
-                    assert userinfo.status == 200 && userinfo.body.get("sub").getAsString().equals(claims.get("sub").getAsString())
-                            && userinfo.body.get("preferred_username").getAsString().equals("carol") && userinfo.body.getAsJsonArray("groups").get(0).getAsString().equals("admins") : "Bearer userinfo must agree with the validated ID token";
-                    String[] parts = token.split("\\.");
-                    byte[] signature = java.util.Base64.getUrlDecoder().decode(parts[2]); signature[0] ^= 1;
-                    String tampered = parts[0] + "." + parts[1] + "." + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
-                    for (String invalid : new String[]{"signature", "issuer", "audience", "nonce", "expiry"}) {
-                        rejected = false;
-                        try {
-                            OidcToken.verify(invalid.equals("signature") ? tampered : token, keys.body,
-                                    invalid.equals("issuer") ? "https://wrong.example.invalid" : OidcFixture.ISSUER,
-                                    invalid.equals("audience") ? "other-client" : OidcFixture.CLIENT,
-                                    invalid.equals("nonce") ? "wrong-nonce" : flow.nonce(), access,
-                                    invalid.equals("expiry") ? java.time.Instant.ofEpochSecond(claims.get("exp").getAsLong()) : java.time.Instant.now());
-                        } catch (java.io.IOException error) { rejected = true; }
-                        assert rejected : "Client must reject an invalid ID token " + invalid;
-                    }
-                    var replay = oidc.exchange(code, flow.verifier(), true);
-                    assert replay.status == 400 && replay.error().equals("invalid_grant") && !replay.body.has("access_token") : "An authorization code must be single use";
-                    flow = OidcFixture.flow(); authorization = oidc.authorize(flow, OidcFixture.CALLBACK);
-                    code = OidcFixture.code(oidc.consent(authorization.location, true), flow);
-                    var wrongPkce = oidc.exchange(code, OidcFixture.flow().verifier(), true);
-                    assert wrongPkce.status == 400 && wrongPkce.error().equals("invalid_grant") && !wrongPkce.body.has("access_token") : "Incorrect PKCE verifier must not redeem a code";
-                    authStarted = garden.started(AuthorizationFixture.AUTH);
-                    garden.reconcile();
-                    assert garden.started(AuthorizationFixture.AUTH).equals(authStarted) : "No-op OIDC reconciliation must preserve the authorization instance";
-                    incus.require("restart", AuthorizationFixture.AUTH); fixture.ready(); browser.clearSession();
-                    login = browser.login("valid");
-                    assert login.get("status").getAsInt() == 200 : "Passkey login must survive OIDC service restart";
-                    oidc.session(browser.sessionCookies());
-                    var restartedKeys = oidc.keys();
-                    assert restartedKeys.body.equals(keys.body) : "Restart must preserve the generated public signing key";
-                    flow = OidcFixture.flow(); authorization = oidc.authorize(flow, OidcFixture.CALLBACK);
-                    code = OidcFixture.code(oidc.consent(authorization.location, true), flow);
-                    tokens = oidc.exchange(code, flow.verifier(), true);
-                    assert tokens.status == 200 : "Shared client secret and hash must still match after restart";
-                    claims = OidcToken.verify(tokens.body.get("id_token").getAsString(), restartedKeys.body, OidcFixture.ISSUER,
-                            OidcFixture.CLIENT, flow.nonce(), tokens.body.get("access_token").getAsString(), java.time.Instant.now());
-                    assert claims.get("preferred_username").getAsString().equals("carol") : "Restarted provider must issue a valid token for the same passkey user";
-                    assert !oidc.leakedInEvidence() : "Generated client secret, sessions, codes and tokens must stay out of service logs and command evidence";
-                    trail.note("OIDC code exchange, signed identity/group claims, consent, negative requests and persistent credentials verified");
-                    System.out.println("OIDC smoke: passkey session and explicit consent issue a verifiable ID token; groups, client authentication, PKCE, single-use codes and restart persistence verified.");
-                }
-                var grafana = new GrafanaFixture(incus, garden, fixture);
-                garden.source("oidc.yml", grafana.provider());
-                garden.source("grafana.ini", grafana.configuration("admins", "Viewer"));
-                garden.source("root.crt", Files.readString(garden.directory.resolve("root.crt")));
-                String grafanaRevision = garden.commitXml(grafana.xml(), "Deploy real Grafana OCI consumer with confidential OIDC");
-                garden.reconcile(); fixture.ready(); grafana.dns(); grafana.ready();
-                assert garden.lastSuccess().equals(grafanaRevision) : "Tend must activate the OCI consumer and its shared generated credentials";
-                var identity = incus.run(java.time.Duration.ofSeconds(10), "exec", GrafanaFixture.INSTANCE, "--", "stat", "-c", "%u:%g:%a", "/etc/tend-grafana-client/value");
-                assert identity.status() == 0 && identity.output().strip().equals("472:0:400") : "OCI consumer must receive a private client secret readable by its declared UID";
-                browser.privateValues(); browser.clearSession();
-                browser.navigate(GrafanaFixture.ORIGIN + "/api/health", GrafanaFixture.ORIGIN);
-                assert browser.applicationUser().get("status").getAsInt() == 401 : "Anonymous browser must not have a Grafana identity";
-                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER); browser.probe();
-                assert browser.evaluate("new URL(location.href).searchParams.has('flow_id')").getAsBoolean() : "Anonymous Grafana login must redirect to a real provider authentication flow";
-                login = browser.login("valid");
-                assert login.get("status").getAsInt() == 200 && login.get("ok").getAsBoolean() : "Grafana flow must accept Carol's enrolled passkey without a password";
-                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
-                var pending = browser.consent();
-                assert pending.get("client").getAsString().equals(GrafanaFixture.CLIENT) && !pending.get("login").getAsBoolean() : "Passkey session must satisfy Grafana's explicit one-factor OIDC policy";
-                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
-                var user = browser.applicationUser();
-                assert user.get("status").getAsInt() == 200 && user.get("login").getAsString().equals("carol")
-                        && user.get("name").getAsString().equals("Carol") && user.get("email").getAsString().equals("carol@example.invalid")
-                        && user.get("admin").getAsBoolean() : "Grafana itself must redeem the PKCE code, validate the ID token and map admins to GrafanaAdmin";
-                int userId = user.get("id").getAsInt();
-                var orgs = browser.evaluate("(async () => {const r=await fetch('/api/user/orgs',{signal:AbortSignal.timeout(8000)});return {status:r.status,orgs:await r.json()};})()").getAsJsonObject();
-                assert orgs.get("status").getAsInt() == 200 && orgs.getAsJsonArray("orgs").size() == 1
-                        && orgs.getAsJsonArray("orgs").get(0).getAsJsonObject().get("role").getAsString().equals("Admin") : "Grafana must assign the mapped organization admin role";
-                String grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
-                garden.reconcile();
-                assert garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Unchanged OCI desired state must not restart Grafana";
-                incus.require("restart", GrafanaFixture.INSTANCE); grafana.ready();
-                user = browser.applicationUser();
-                assert user.get("status").getAsInt() == 200 && user.get("id").getAsInt() == userId && user.get("admin").getAsBoolean() : "Grafana session and user identity must survive restart with the persistent data volume and secret key";
-                browser.privateValues(); browser.clearSession(); browser.portal();
-                assert browser.password("bob") == 200 : "Observer must authenticate before testing Grafana's own admission rules";
-                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
-                pending = browser.consent();
-                assert pending.get("client").getAsString().equals(GrafanaFixture.CLIENT) && !pending.get("login").getAsBoolean() : "Provider must permit the observer so the consumer's group check is exercised";
-                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
-                user = browser.applicationUser();
-                assert user.get("status").getAsInt() == 401 : "Grafana must reject a provider-authenticated user outside its allowed groups";
-                assert !grafana.leakedInEvidence(browser.privateValues()) : "Group denial must not leak credentials into application logs or command evidence";
-                grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
-                garden.source("grafana.ini", grafana.configuration("admins observers", "Viewer"));
-                String admittedRevision = garden.commitXml(grafana.xml(), "Admit the observer as Viewer through a group-list-only change");
-                garden.reconcile(); grafana.ready();
-                assert garden.lastSuccess().equals(admittedRevision) && !garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Git group-list change must activate Grafana";
-                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
-                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
-                user = browser.applicationUser();
-                assert user.get("status").getAsInt() == 200 && user.get("login").getAsString().equals("bob") && !user.get("admin").getAsBoolean() : "Changing only the allowed groups must admit the same observer with a valid non-admin role";
-                orgs = browser.evaluate("(async () => {const r=await fetch('/api/user/orgs',{signal:AbortSignal.timeout(8000)});return {status:r.status,orgs:await r.json()};})()").getAsJsonObject();
-                assert orgs.get("status").getAsInt() == 200 && orgs.getAsJsonArray("orgs").size() == 1
-                        && orgs.getAsJsonArray("orgs").get(0).getAsJsonObject().get("role").getAsString().equals("Viewer") : "The admitted observer must receive exactly the mapped Viewer organization role";
-                browser.privateValues(); browser.clearSession(); browser.portal();
-                assert browser.password("bob") == 200 : "Observer must begin a fresh provider session before the strict-role check";
-                grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
-                garden.source("grafana.ini", grafana.configuration("admins observers", ""));
-                String strictRevision = garden.commitXml(grafana.xml(), "Exercise strict role rejection independently of group admission");
-                garden.reconcile(); grafana.ready();
-                assert garden.lastSuccess().equals(strictRevision) && !garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Git configuration changes must activate the real OCI consumer";
-                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
-                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
-                user = browser.applicationUser();
-                assert user.get("status").getAsInt() == 401 : "An allowed group with no mapped role must still be denied under role_attribute_strict";
-                browser.privateValues(); browser.clearSession(); browser.portal();
-                login = browser.login("valid");
-                assert login.get("status").getAsInt() == 200 : "Git activation must preserve the registered passkey";
-                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
-                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
-                user = browser.applicationUser();
-                assert user.get("status").getAsInt() == 200 && user.get("id").getAsInt() == userId && user.get("admin").getAsBoolean() : "Fresh OIDC login after Git activation must retain the same Grafana user and admin mapping";
-                assert !grafana.leakedInEvidence(browser.privateValues()) : "Grafana secrets, browser sessions, authorization codes and JWTs must stay out of service logs and uploaded evidence";
-                trail.note("Real Grafana OCI login, identity, group/strict-role decisions and persistent data verified");
-                System.out.println("Grafana smoke: OCI consumer completes passkey OIDC login, maps identity and admin roles, denies outside-group and unmapped-role users, and preserves identity across restart and Git activation.");
-            }
+- GitHub runner OS label: `ubuntu-24.04`, AMD64.
+- Incus and incus-client: `1:7.5.1-ubuntu24.04-202609271822` from Zabbly's signed stable repository.
+  The signing key fingerprint is checked before installation. A missing pinned build fails the
+  job; update the pin deliberately rather than silently selecting another release.
+- OVN, Open vSwitch and busybox-static: Ubuntu packages; exact installed versions are recorded.
+- Container image: `images:alpine/3.22`, resolved once and copied into the local image cache. The basic cases use that copy; ingress fixtures derive cached images from it. This pins the OS release, not the rolling build; the full fingerprint
+  and image information are retained in `image.txt` for each run.
+- Caddy: official `caddy_2.11.7_linux_amd64.tar.gz`, SHA-256
+  `727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b`. Bootstrap verifies the
+  archive, installs curl and fixture DNS packages from Alpine 3.22, and records versions and derived image fingerprints.
+  Bootstrap fetches signed curl/dnsmasq packages in `alpine:3.22` through the host Docker network,
+  records its image digest and package checksums, and installs them offline in Incus. OVN guests
+  require no internet access. Caddy's private CA keys
+  remain inside its disposable root disk; only its public root certificate is observed.
+- Authelia: official `authelia-v4.39.28-linux-amd64-musl.tar.gz`, SHA-256
+  `ce2526b633ce3eec06680fae2f26060dc8cef3a92cdbc376410b28bcca6c97e1`. Its CLI generates a
+  random private fixture password and Argon2 digest; login bodies and the user database stay private.
+- Grafana: official `grafana/grafana:13.1.0` OCI index digest
+  `sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63`.
+  Operator bootstrap uses Incus’s OCI remote with Ubuntu `skopeo`/`umoci`, records the cache
+  fingerprint, and Tend creates the application from that fingerprint. No registry pull feature
+  is added to Tend.
+- Pi: `images:debian/13/cloud` VM image, resolved once to a recorded full fingerprint. Node
+  `v24.19.0` Linux x64 archive SHA-256
+  `14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647`;
+  pi-web-sandbox release `build-de8c7c683751d0bd91d6e92a8b5f9ea8497f39de`, archive SHA-256
+  `7b004aaf4be27d0b1e8ad0860c3897fe66d701f28c67e5982f01417744f0756b`.
+  Guest package updates and npm's release lockfile are installed using the homelab bootstrap.
+  `/dev/kvm` is mandatory and its availability is recorded.
+- Browser: the GitHub Ubuntu runner's installed `google-chrome`, with its version recorded.
+  `libnss3-tools` supplies `certutil`; the JDK WebSocket/HTTP client and already-pinned Gson
+  drive CDP without a browser automation library or new controller dependency.
+- `dir` storage pool and IPv4-only test subnets: `10.77.0.0/24` for the uplink and `10.77.1.0/24`
+  for the OVN network. A disposable VM must have no conflicting routes or existing `tend-ci-*`
+  resources. Profile inheritance is disabled for the test instances.
 
-            assert fixture.privateUsers().equals(privateUsers) : "All configuration activations and process restarts must preserve operator users";
-            assert fixture.privateEvidenceExcluded() : "Private user hashes and passwords must be absent from Git and uploaded evidence";
-            assert !Files.readString(garden.directory.resolve("author/incus.xml")).contains(privateUsers) : "Private user database must never enter public desired XML";
-        }
-    }
-}
+Every run uploads `out/incus-smoke/` as a seven-day GitHub artifact. It contains each CLI command
+and its output, Minau results, resolved inputs, network configurations, OVN/OVS topology, container
+configurations and service journals. Diagnostics run before cleanup, even on failure. All resources
+are temporary; the runner VM is discarded after the job. Setup uses only the local daemon and
+needs no repository secrets, external Incus credentials or published test images.
+
+## Reproduce on a disposable VM
+
+These scripts install packages, change host network services and create/delete fixed-name Incus
+resources in the default and `tend-ci-oci` projects. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
+existing Incus host. The scripts require `TEND_DISPOSABLE_RUNNER=yes` as an explicit environment
+selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3, Docker, Google Chrome and working host internet access. Host loopback port 443 must be free. Nested KVM must be available and the additional Pi subnet
+`10.78.0.0/24` and controller bridge `10.79.0.0/24` must not conflict with existing routes.
+
+From Tend's repository root:
+
+```sh
+export TEND_DISPOSABLE_RUNNER=yes
+sh scripts/prepare
+javac @cmd/compile
+bash scripts/incus-smoke/install
+bash scripts/incus-smoke/prepare
+bash scripts/incus-smoke/prepare-ingress
+bash scripts/incus-smoke/prepare-authelia
+bash scripts/incus-smoke/prepare-grafana
+bash scripts/incus-smoke/prepare-pi
+bash scripts/incus-smoke/authenticate
+bash scripts/incus-smoke/prepare-controller
+sudo apt-get install -y libnss3-tools
+google-chrome --version >out/incus-smoke/browser-version.txt
+echo '127.0.0.1 auth.garden.internal' | sudo tee -a /etc/hosts >/dev/null
+java @cmd/incus-smoke
+bash scripts/incus-smoke/diagnostics
+bash scripts/incus-smoke/cleanup
+```
+
+Capture diagnostics and run cleanup after failures too. There is no skip-on-unsupported-host
+behavior: failed installation, missing kernel support, failed provisioning or incorrect filtering
+must produce a failed CI job. Offline tests continue to use `java @cmd/test` independently.
+
+## Adapter references
+
+- https://github.com/zabbly/incus
+- https://linuxcontainers.org/incus/docs/main/howto/network_ovn_setup/
+- https://linuxcontainers.org/incus/docs/main/howto/network_acls/

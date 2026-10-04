@@ -45,6 +45,48 @@ final class AuthorizationFixture {
             incus.require("file", "push", Path.of(fixture, user + ".json").toString(), CLIENT + "/root/" + user + ".json", "--mode=0600");
         ready();
     }
+    String privateUsers() throws IOException, InterruptedException {
+        Path file = garden.directory.resolve("observed-users.yml");
+        if (!Files.exists(file)) Files.createFile(file, java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
+        incus.require("storage", "volume", "file", "pull", "local:tend-ci-pool", "tend-ci-private-users/users.yml", file.toString());
+        return Files.readString(file);
+    }
+    void updatePrivateGroups(boolean grant) throws IOException, InterruptedException {
+        String fixture = Files.readString(Path.of("out/incus-smoke/authelia-fixture-directory.txt")).strip();
+        Path input = Path.of(fixture, "inputs", "users.yml");
+        var users = com.google.gson.JsonParser.parseString(Files.readString(input)).getAsJsonObject();
+        var groups = new com.google.gson.JsonArray();
+        for (String group : grant ? List.of("admins", "ai-users") : List.of("gardeners", "ai-users")) groups.add(group);
+        users.getAsJsonObject("users").getAsJsonObject("alice").add("groups", groups);
+        Files.writeString(input, users.toString());
+        incus.require("stop", AUTH);
+        var result = incus.command(Duration.ofSeconds(120), List.of("sudo", "-n", "python3", "scripts/bootstrap/private-volume",
+                "replace", "users", "local", "default", "tend-ci-pool", "tend-ci-private-users", "tend-ci-controller", "0", input.getParent().toString(), "tend-ci-private-operator"));
+        if (result.status() != 0) throw new IOException("Private user replacement rejected; consumer remains stopped");
+        incus.require("start", AUTH); ready();
+    }
+    boolean privateEvidenceExcluded() throws IOException {
+        String fixture = Files.readString(Path.of("out/incus-smoke/authelia-fixture-directory.txt")).strip();
+        var users = com.google.gson.JsonParser.parseString(Files.readString(Path.of(fixture, "inputs/users.yml"))).getAsJsonObject();
+        String hash = users.getAsJsonObject("users").getAsJsonObject("alice").get("password").getAsString();
+        String password = com.google.gson.JsonParser.parseString(Files.readString(Path.of(fixture, "alice.json"))).getAsJsonObject().get("password").getAsString();
+        try (var paths = Files.walk(Path.of("out/incus-smoke"))) {
+            for (Path file : paths.filter(Files::isRegularFile).toList()) {
+                String evidence = new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8);
+                if (evidence.contains(hash) || evidence.contains(password)) return false;
+            }
+        }
+        try (var paths = Files.list(garden.directory.resolve("author"))) {
+            for (Path file : paths.filter(Files::isRegularFile).toList()) {
+                String publicInput = Files.readString(file);
+                if (publicInput.contains(hash) || publicInput.contains(password)) return false;
+            }
+        }
+        return true;
+    }
+    String privateDelivery() throws IOException, InterruptedException {
+        return output("exec", AUTH, "--", "stat", "-c", "%u:%g:%a", "/etc/private-users", "/etc/private-users/users.yml");
+    }
     void ready() throws IOException, InterruptedException {
         long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
         do {
@@ -95,7 +137,7 @@ final class AuthorizationFixture {
     String baseConfiguration() {
         return """
                 {"server":{"address":"tcp://0.0.0.0:9091/"},"log":{"level":"info"},
-                 "authentication_backend":{"file":{"path":"/etc/authelia/users.yml"}},
+                 "authentication_backend":{"file":{"path":"/etc/private-users/users.yml","watch":false}},
                  "session":{"cookies":[{"domain":"garden.internal","authelia_url":"https://auth.garden.internal","default_redirection_url":"https://app.garden.internal"}]},
                  "storage":{"local":{"path":"/var/lib/authelia/db.sqlite3"}},
                  "notifier":{"filesystem":{"filename":"/var/lib/authelia/notifications.txt"}}}
@@ -175,6 +217,7 @@ final class AuthorizationFixture {
                 <incus project="default">
                   <secret name="auth-session"/><secret name="auth-storage"/><secret name="auth-reset"/>
                   <configuration name="authelia-base"><file path="/configuration.json" source="authelia.json"/></configuration>
+                  <volume pool="tend-ci-pool" name="tend-ci-private-users" private-owner="tend-ci-controller" private-kind="users" private-uid="0"/>
                 """
                 + instance(GATEWAY, caddy, "10.77.1.40", "", "")
                 + instance(BACKEND, garden.fingerprint, "10.77.1.41", "", "")
@@ -186,6 +229,10 @@ final class AuthorizationFixture {
                     <entry key="environment.AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE" value="/etc/tend-reset/value"/>
                   </config>
                 """, """
+                  <device name="private-users" type="disk"><config>
+                    <entry key="pool" value="tend-ci-pool"/><entry key="source" value="tend-ci-private-users"/>
+                    <entry key="path" value="/etc/private-users"/><entry key="readonly" value="true"/>
+                  </config></device>
                   <mount name="base" configuration="authelia-base" pool="tend-ci-pool" path="/etc/tend-base" mode="0644"/>
                   <mount name="session" secret="auth-session" pool="tend-ci-pool" path="/etc/tend-session"/>
                   <mount name="storage" secret="auth-storage" pool="tend-ci-pool" path="/etc/tend-storage"/>

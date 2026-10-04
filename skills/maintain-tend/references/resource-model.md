@@ -94,6 +94,11 @@ invalidate activation before writing. Each consumer has its own volume, avoiding
 assumptions. Old volumes are retained; garbage collection is outside this proof of concept.
 Declared Incus volumes and their root-level files remain available for the existing offline slice.
 
+Private operator inputs use a volume with `private-owner`, `private-kind` (`users`, `metrics` or
+`smtp`) and `private-uid` attributes, plus an ordinary read-only disk. These declarations contain
+metadata only and are excluded from Tend's managed volume/file reconciliation. Every referenced
+private volume is preflighted before mutation. See [private delivery and activation](private-inputs.md).
+
 ## Ingress
 
 ```xml
