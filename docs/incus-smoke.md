@@ -134,10 +134,11 @@ The real browser follows Grafana’s login redirect, authenticates with Carol’
 accepts explicit consent and returns through Grafana’s callback. Grafana itself exchanges the
 code. Its user API must report Carol’s actual name/email/login, global admin status and Admin
 organization role. The provider permits Bob, then Grafana independently denies him through
-`allowed_groups` while Bob has a valid Viewer role; a Git change admits observers to the group
-list and replaces that fallback with an empty role, so strict role mapping independently denies Bob.
+`allowed_groups` while Bob has a valid Viewer role. A Git change to only the group list then
+admits the same observer as Viewer, without global admin privileges. A second Git change to
+only the role mapping replaces that fallback with an empty role, independently denying Bob.
 Grafana accepts `None` as a valid role; the homelab's admin-group allowlist is its admission rule.
-An explicitly configured private Grafana log file must confirm both denial reasons.
+An explicitly configured private Grafana log file is inspected for credential leakage.
 No-op reconciliation preserves the process, restart preserves
 the session, and a fresh login after Git activation preserves the same user ID and admin role.
 Browser cookies/codes and mounted secret values are checked against command evidence and

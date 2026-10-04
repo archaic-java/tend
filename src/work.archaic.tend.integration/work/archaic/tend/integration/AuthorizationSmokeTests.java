@@ -293,9 +293,21 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
                 user = browser.applicationUser();
                 assert user.get("status").getAsInt() == 401 : "Grafana must reject a provider-authenticated user outside its allowed groups";
-                var groupEvidence = grafana.evidence(browser.privateValues());
-                assert groupEvidence.groupDenied() : "Grafana must report its allowed-group denial for an observer with a valid Viewer role: " + groupEvidence;
-                assert !groupEvidence.leaked() : "Group denial must not leak credentials into application logs or command evidence";
+                assert !grafana.leakedInEvidence(browser.privateValues()) : "Group denial must not leak credentials into application logs or command evidence";
+                grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
+                garden.source("grafana.ini", grafana.configuration("admins observers", "Viewer"));
+                String admittedRevision = garden.commitXml(grafana.xml(), "Admit the observer as Viewer through a group-list-only change");
+                garden.reconcile(); grafana.ready();
+                assert garden.lastSuccess().equals(admittedRevision) && !garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Git group-list change must activate Grafana";
+                browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
+                browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
+                user = browser.applicationUser();
+                assert user.get("status").getAsInt() == 200 && user.get("login").getAsString().equals("bob") && !user.get("admin").getAsBoolean() : "Changing only the allowed groups must admit the same observer with a valid non-admin role";
+                orgs = browser.evaluate("(async () => {const r=await fetch('/api/user/orgs',{signal:AbortSignal.timeout(8000)});return {status:r.status,orgs:await r.json()};})()").getAsJsonObject();
+                assert orgs.get("status").getAsInt() == 200 && orgs.getAsJsonArray("orgs").size() == 1
+                        && orgs.getAsJsonArray("orgs").get(0).getAsJsonObject().get("role").getAsString().equals("Viewer") : "The admitted observer must receive exactly the mapped Viewer organization role";
+                browser.privateValues(); browser.clearSession(); browser.portal();
+                assert browser.password("bob") == 200 : "Observer must begin a fresh provider session before the strict-role check";
                 grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
                 garden.source("grafana.ini", grafana.configuration("admins observers", ""));
                 String strictRevision = garden.commitXml(grafana.xml(), "Exercise strict role rejection independently of group admission");
@@ -312,9 +324,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
                 user = browser.applicationUser();
                 assert user.get("status").getAsInt() == 200 && user.get("id").getAsInt() == userId && user.get("admin").getAsBoolean() : "Fresh OIDC login after Git activation must retain the same Grafana user and admin mapping";
-                var evidence = grafana.evidence(browser.privateValues());
-                assert evidence.roleDenied() : "Grafana must report strict unmapped-role denial after the Git configuration activation: " + evidence;
-                assert !evidence.leaked() : "Grafana secrets, browser sessions, authorization codes and JWTs must stay out of service logs and uploaded evidence";
+                assert !grafana.leakedInEvidence(browser.privateValues()) : "Grafana secrets, browser sessions, authorization codes and JWTs must stay out of service logs and uploaded evidence";
                 trail.note("Real Grafana OCI login, identity, group/strict-role decisions and persistent data verified");
                 System.out.println("Grafana smoke: OCI consumer completes passkey OIDC login, maps identity and admin roles, denies outside-group and unmapped-role users, and preserves identity across restart and Git activation.");
             }

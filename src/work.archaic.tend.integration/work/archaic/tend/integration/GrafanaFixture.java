@@ -149,15 +149,11 @@ final class GrafanaFixture {
         } while (System.nanoTime() < deadline);
         throw new IOException("Grafana did not become healthy through the HTTPS gateway");
     }
-    record Evidence(boolean leaked, boolean groupDenied, boolean roleDenied, int logCharacters) {}
-    Evidence evidence(Set<String> browserValues) throws Exception {
+    boolean leakedInEvidence(Set<String> browserValues) throws Exception {
         var values = new HashSet<>(browserValues);
         List<Path> evidence = new ArrayList<>();
         Path console = garden.directory.resolve("grafana-console.private");
         privateCommand(console, "exec", INSTANCE, "--", "cat", "/var/lib/grafana/logs/grafana.log"); evidence.add(console);
-        String applicationLog = Files.readString(console);
-        boolean groupDenied = applicationLog.contains("user not a member of one of the required groups");
-        boolean roleDenied = applicationLog.contains("could not evaluate any valid roles using IdP provided data");
         Path auth = garden.directory.resolve("grafana-authelia-log.private");
         privateCommand(auth, "exec", AuthorizationFixture.AUTH, "--", "cat", "/var/log/tend-authelia.log"); evidence.add(auth);
         for (String mount : List.of("client", "admin", "key")) {
@@ -168,11 +164,11 @@ final class GrafanaFixture {
         try (var paths = Files.walk(Path.of("out/incus-smoke"))) { evidence.addAll(paths.filter(Files::isRegularFile).toList()); }
         for (Path file : evidence) {
             String text = Files.readString(file);
-            for (String value : values) if (value.length() >= 16 && text.contains(value)) return new Evidence(true, groupDenied, roleDenied, applicationLog.length());
+            for (String value : values) if (value.length() >= 16 && text.contains(value)) return true;
             if (text.contains("-----BEGIN PRIVATE KEY-----") || text.contains("$pbkdf2-sha512$")
-                    || java.util.regex.Pattern.compile("eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+").matcher(text).find()) return new Evidence(true, groupDenied, roleDenied, applicationLog.length());
+                    || java.util.regex.Pattern.compile("eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+").matcher(text).find()) return true;
         }
-        return new Evidence(false, groupDenied, roleDenied, applicationLog.length());
+        return false;
     }
     private static void privateCommand(Path output, String... args) throws Exception {
         var command = new ArrayList<>(List.of("sudo", "-n", "incus")); command.addAll(List.of(args));
