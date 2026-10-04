@@ -79,6 +79,11 @@ resource state. Incus operations use bounded waits and configuration PUTs use ET
 
 ## OCI bootstrap boundary
 
+Start a fresh IncusOS installation with the [remote bootstrap procedure](skills/maintain-tend/references/incusos-bootstrap.md).
+It inventories the actual host, establishes operator-owned prerequisites, caches pinned images and
+records a validated manifest before application deployment. Controller installation and private
+input delivery are the next increments tracked by issues #13 and #14.
+
 ```sh
 docker build -t tend:local .
 docker run --rm tend:local --help
