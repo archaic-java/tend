@@ -39,6 +39,7 @@ Use this entry point for both human contributors and coding agents.
 | Prepare dependencies, compile or package | [Development dependencies](references/development.md#dependencies), [README](../../README.md) | scripts/prepare, lib/src, cmd and Dockerfile; compile, offline tests and CLI help. |
 | Change Incus protocol handling or mock behavior | [Mock fidelity](references/development.md#incus-mock-fidelity), [integration](references/incus-smoke.md) | IncusClient and IncusMock; offline failures/recovery, then affected real-host cases. |
 | Run or extend real-host verification | [Integration reproduction and evidence](references/incus-smoke.md), [development coverage](references/development.md#real-host-integration) | Separate integration module and scripts/incus-smoke; preserve diagnostics and cleanup. |
+| Bootstrap a reset IncusOS host | [Remote bootstrap](references/incusos-bootstrap.md), [manifest template](references/bootstrap-manifest.example.md) | Operator procedure only; validate actual network roles, image fingerprints, TLS and target storage before handing off to the controller. |
 
 ## Complete the change
 
