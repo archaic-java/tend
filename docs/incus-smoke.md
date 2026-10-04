@@ -137,7 +137,8 @@ organization role. The provider permits Bob, then Grafana independently denies h
 `allowed_groups` while Bob has a valid Viewer role; a Git change admits observers to the group
 list and replaces that fallback with an empty role, so strict role mapping independently denies Bob.
 Grafana accepts `None` as a valid role; the homelab's admin-group allowlist is its admission rule.
-Private application logs must confirm both denial reasons. No-op reconciliation preserves the process, restart preserves
+An explicitly configured private Grafana log file must confirm both denial reasons.
+No-op reconciliation preserves the process, restart preserves
 the session, and a fresh login after Git activation preserves the same user ID and admin role.
 Browser cookies/codes and mounted secret values are checked against command evidence and
 privately read application logs. Grafana’s raw console is never uploaded, including on failure.

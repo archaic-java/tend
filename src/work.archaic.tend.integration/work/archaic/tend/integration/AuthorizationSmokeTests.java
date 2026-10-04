@@ -294,7 +294,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 user = browser.applicationUser();
                 assert user.get("status").getAsInt() == 401 : "Grafana must reject a provider-authenticated user outside its allowed groups";
                 var groupEvidence = grafana.evidence(browser.privateValues());
-                assert groupEvidence.groupDenied() : "Grafana must report its allowed-group denial for an observer with a valid Viewer role";
+                assert groupEvidence.groupDenied() : "Grafana must report its allowed-group denial for an observer with a valid Viewer role: " + groupEvidence;
                 assert !groupEvidence.leaked() : "Group denial must not leak credentials into application logs or command evidence";
                 grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
                 garden.source("grafana.ini", grafana.configuration("admins observers", ""));
@@ -313,7 +313,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 user = browser.applicationUser();
                 assert user.get("status").getAsInt() == 200 && user.get("id").getAsInt() == userId && user.get("admin").getAsBoolean() : "Fresh OIDC login after Git activation must retain the same Grafana user and admin mapping";
                 var evidence = grafana.evidence(browser.privateValues());
-                assert evidence.roleDenied() : "Grafana must report strict unmapped-role denial after the Git configuration activation";
+                assert evidence.roleDenied() : "Grafana must report strict unmapped-role denial after the Git configuration activation: " + evidence;
                 assert !evidence.leaked() : "Grafana secrets, browser sessions, authorization codes and JWTs must stay out of service logs and uploaded evidence";
                 trail.note("Real Grafana OCI login, identity, group/strict-role decisions and persistent data verified");
                 System.out.println("Grafana smoke: OCI consumer completes passkey OIDC login, maps identity and admin roles, denies outside-group and unmapped-role users, and preserves identity across restart and Git activation.");

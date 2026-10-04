@@ -111,6 +111,8 @@ final class GrafanaFixture {
                             <entry key="oci.uid" value="472"/><entry key="oci.gid" value="0"/>
                             <entry key="oci.dns.nameservers" value="10.77.1.40"/>
                             <entry key="environment.GF_PATHS_CONFIG" value="/etc/tend-grafana/grafana.ini"/>
+                            <entry key="environment.GF_LOG_MODE" value="file"/>
+                            <entry key="environment.GF_PATHS_LOGS" value="/var/lib/grafana/logs"/>
                             <entry key="environment.SSL_CERT_FILE" value="/etc/tend-grafana/root.crt"/>
                             <entry key="environment.GF_SECURITY_ADMIN_PASSWORD__FILE" value="/etc/tend-grafana-admin/value"/>
                             <entry key="environment.GF_SECURITY_SECRET_KEY__FILE" value="/etc/tend-grafana-key/value"/>
@@ -147,12 +149,12 @@ final class GrafanaFixture {
         } while (System.nanoTime() < deadline);
         throw new IOException("Grafana did not become healthy through the HTTPS gateway");
     }
-    record Evidence(boolean leaked, boolean groupDenied, boolean roleDenied) {}
+    record Evidence(boolean leaked, boolean groupDenied, boolean roleDenied, int logCharacters) {}
     Evidence evidence(Set<String> browserValues) throws Exception {
         var values = new HashSet<>(browserValues);
         List<Path> evidence = new ArrayList<>();
         Path console = garden.directory.resolve("grafana-console.private");
-        privateCommand(console, "console", INSTANCE, "--show-log"); evidence.add(console);
+        privateCommand(console, "exec", INSTANCE, "--", "cat", "/var/lib/grafana/logs/grafana.log"); evidence.add(console);
         String applicationLog = Files.readString(console);
         boolean groupDenied = applicationLog.contains("user not a member of one of the required groups");
         boolean roleDenied = applicationLog.contains("could not evaluate any valid roles using IdP provided data");
@@ -166,11 +168,11 @@ final class GrafanaFixture {
         try (var paths = Files.walk(Path.of("out/incus-smoke"))) { evidence.addAll(paths.filter(Files::isRegularFile).toList()); }
         for (Path file : evidence) {
             String text = Files.readString(file);
-            for (String value : values) if (value.length() >= 16 && text.contains(value)) return new Evidence(true, groupDenied, roleDenied);
+            for (String value : values) if (value.length() >= 16 && text.contains(value)) return new Evidence(true, groupDenied, roleDenied, applicationLog.length());
             if (text.contains("-----BEGIN PRIVATE KEY-----") || text.contains("$pbkdf2-sha512$")
-                    || java.util.regex.Pattern.compile("eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+").matcher(text).find()) return new Evidence(true, groupDenied, roleDenied);
+                    || java.util.regex.Pattern.compile("eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+").matcher(text).find()) return new Evidence(true, groupDenied, roleDenied, applicationLog.length());
         }
-        return new Evidence(false, groupDenied, roleDenied);
+        return new Evidence(false, groupDenied, roleDenied, applicationLog.length());
     }
     private static void privateCommand(Path output, String... args) throws Exception {
         var command = new ArrayList<>(List.of("sudo", "-n", "incus")); command.addAll(List.of(args));
