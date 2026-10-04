@@ -37,6 +37,8 @@ jobs:
     timeout-minutes: 40
     env:
       TEND_DISPOSABLE_RUNNER: 'yes'
+      # Resume only after retained evidence proves the four preceding suites passed.
+      TEND_SMOKE_FROM: ${{ contains(github.event.pull_request.labels.*.name, 'incus-resume-controller') && 'ControllerSmokeTests' || 'OvnSmokeTests' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4

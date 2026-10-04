@@ -98,7 +98,39 @@ final class OciControllerFixture {
             if (lastSuccess().equals(revision)) return true;
             Thread.sleep(300);
         } while (System.nanoTime() < deadline);
+        diagnoseConvergence();
         return false;
+    }
+
+    private void diagnoseConvergence() throws IOException, InterruptedException {
+        // Classify private console bytes; export only fixed labels, never excerpts or causes.
+        var console = privateIncus("console", CONTROLLER, "--project", project, "--show-log");
+        var labels = new ArrayList<String>();
+        for (var marker : Map.ofEntries(
+                Map.entry("could not open", "launch-file-unreadable"),
+                Map.entry("Permission denied", "permission-denied"),
+                Map.entry("Module ", "module-resolution"),
+                Map.entry("FindException", "module-resolution-exception"),
+                Map.entry("Could not find or load main class", "main-class-unavailable"),
+                Map.entry("Cannot prepare controller state", "state-preparation-failed"),
+                Map.entry("Run --help for arguments", "launch-arguments-invalid"),
+                Map.entry("Expected exactly one Log provider", "logging-provider-unavailable"),
+                Map.entry("Another Tend process", "state-writer-conflict"),
+                Map.entry("Reconciliation failed", "watch-attempt-failed"),
+                Map.entry("SSLContext", "tls-context-initialization"),
+                Map.entry("KeyManagementException", "tls-key-management"),
+                Map.entry("OutOfMemoryError", "jvm-memory-failure"),
+                Map.entry("unable to create native thread", "jvm-thread-failure"),
+                Map.entry("execvp", "entrypoint-execution-failed"),
+                Map.entry("No such file or directory", "runtime-file-unavailable")
+        ).entrySet()) {
+            if (console.output().contains(marker.getKey())) labels.add(marker.getValue());
+        }
+        Collections.sort(labels);
+        Files.writeString(Path.of("out/incus-smoke", "controller-convergence-" + project + ".txt"),
+                "console-observation-status=" + console.status() + "\n" +
+                "classifications=" + labels + "\n" +
+                "private-console-excerpts-withheld=true\n");
     }
 
     String version() throws IOException, InterruptedException {
