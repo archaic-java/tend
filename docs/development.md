@@ -115,5 +115,8 @@ It validates RS256 with the published JWKS and issuer/audience/nonce/expiry clai
 userinfo and groups, rejects bad client secrets and PKCE verifiers, and verifies single-use codes.
 The same browser case deploys the actual Grafana OCI consumer and verifies its passkey OIDC
 login, identity/admin roles, independent group and strict-role denial, and persistent user/session
-state across restart and Git activation. OCI controller deployment, two-factor and Open WebUI
-deployment remain unverified.
+state across restart and Git activation. A sixth case deploys the pinned Pi harness through cloud-init in a real Debian VM, checks
+agent/installer success, unprivileged systemd startup, frontend/health, Bash exclusion, actual
+custom-volume mounts, no-op stability and persistent data across restart. Its fixture readiness
+checks add no controller feature. VM update/replacement is tracked in issue #9. OCI controller
+deployment, two-factor and Open WebUI deployment remain unverified.

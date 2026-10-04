@@ -2,7 +2,8 @@
 
 The `incus-smoke` job in Verify tests whether an ordinary GitHub-hosted Ubuntu VM can provide the
 real environment needed for Tend integration. Incus is installed directly on the runner. Its
-workloads are unprivileged system containers, so this test needs no nested hardware virtualization.
+network/authentication workloads are unprivileged system containers. The Pi installation case uses
+a real cloud VM and requires nested KVM; missing support fails rather than skipping the case.
 The VM contains both OVN's central database/control plane and its local controller/Open vSwitch.
 
 ## What it proves
@@ -145,6 +146,30 @@ Browser cookies/codes and mounted secret values are checked against command evid
 privately read application logs. Grafana’s raw console is never uploaded, including on failure.
 Open WebUI, physical authenticators and two-factor remain outside this fixture.
 
+The Pi case creates a Debian 13 cloud VM and two retained custom filesystem volumes through
+Tend's XML on a disposable Git `main`. `cloud-init.user-data` installs the same checksum-pinned
+Node 24.19.0 and pi-web-sandbox release as homelab, including `npm ci --omit=dev --ignore-scripts`,
+and enables the same hardened systemd unit. The copied installer/unit originate from
+homelab commit `8fc54492c6d75d9713061703c5a6667347e1481b`; update these fixtures deliberately
+when the homelab provisioning changes. JSON-form cloud-config avoids a new YAML library.
+
+Bounded test-fixture checks wait for the real Incus agent and successful cloud-init, then require
+the unprivileged systemd service, exact Node version, actual health JSON and built frontend assets.
+Startup reports must exclude Bash. Both data paths must be actual virtiofs/9p mounts with UID/GID
+1000 and mode 0700. The pi user writes a marker into each volume; an unchanged Tend pass must
+not reboot the VM, and an explicit restart must restore the service and preserve both markers.
+The declared synthetic model is unreachable and receives no requests. Conversations and tool
+behavior are already tested in pi-web-sandbox; this case tests deployment. It does not repeat
+Caddy/Authelia authentication, exercise a GPU, or prove Pi update/replacement behavior. The latter
+is deferred in [issue #9](https://github.com/archaic-java/tend/issues/9); no controller lifecycle
+feature is added here.
+
+Pi uses a separate disposable NAT bridge (`10.78.0.0/24`) for the guest installer to reach Debian,
+Node, GitHub releases and npm. Docker's forwarding chain, when present, explicitly permits
+outbound/established-return traffic for that bridge. The test does not claim network isolation.
+Pi VM/cloud-init/service diagnostics contain only synthetic configuration, no real credentials;
+workspace and session contents are excluded from artifacts.
+
 The cases use different resources and evidence directories so concurrent Minau execution is safe.
 TLS keys, private Java arguments and controller state are outside the uploaded artifact. The test
 uses the normal JSSE client/trust stores and hostname verification; there is no TLS bypass.
@@ -173,6 +198,13 @@ uses the normal JSSE client/trust stores and hostname verification; there is no 
   Operator bootstrap uses Incus’s OCI remote with Ubuntu `skopeo`/`umoci`, records the cache
   fingerprint, and Tend creates the application from that fingerprint. No registry pull feature
   is added to Tend.
+- Pi: `images:debian/13/cloud` VM image, resolved once to a recorded full fingerprint. Node
+  `v24.19.0` Linux x64 archive SHA-256
+  `14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647`;
+  pi-web-sandbox release `build-de8c7c683751d0bd91d6e92a8b5f9ea8497f39de`, archive SHA-256
+  `7b004aaf4be27d0b1e8ad0860c3897fe66d701f28c67e5982f01417744f0756b`.
+  Guest package updates and npm's release lockfile are installed using the homelab bootstrap.
+  `/dev/kvm` is mandatory and its availability is recorded.
 - Browser: the GitHub Ubuntu runner's installed `google-chrome`, with its version recorded.
   `libnss3-tools` supplies `certutil`; the JDK WebSocket/HTTP client and already-pinned Gson
   drive CDP without a browser automation library or new controller dependency.
@@ -191,7 +223,8 @@ needs no repository secrets, external Incus credentials or published test images
 These scripts install packages, change host network services and create/delete fixed-name Incus
 resources in the default project. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
 existing Incus host. The scripts require `TEND_DISPOSABLE_RUNNER=yes` as an explicit environment
-selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3, Docker, Google Chrome and working host internet access. Host loopback port 443 must be free.
+selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3, Docker, Google Chrome and working host internet access. Host loopback port 443 must be free. Nested KVM must be available and the additional Pi subnet
+`10.78.0.0/24` must not conflict with existing routes.
 
 From Tend's repository root:
 
@@ -204,6 +237,7 @@ bash scripts/incus-smoke/prepare
 bash scripts/incus-smoke/prepare-ingress
 bash scripts/incus-smoke/prepare-authelia
 bash scripts/incus-smoke/prepare-grafana
+bash scripts/incus-smoke/prepare-pi
 bash scripts/incus-smoke/authenticate
 sudo apt-get install -y libnss3-tools
 google-chrome --version >out/incus-smoke/browser-version.txt

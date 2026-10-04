@@ -26,7 +26,7 @@ jobs:
       - run: docker run --rm tend:test --help
   incus-smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       TEND_DISPOSABLE_RUNNER: 'yes'
     steps:
@@ -47,6 +47,8 @@ jobs:
         run: bash scripts/incus-smoke/prepare-authelia
       - name: Cache pinned Grafana OCI image
         run: bash scripts/incus-smoke/prepare-grafana
+      - name: Cache Pi cloud VM and verify KVM availability
+        run: bash scripts/incus-smoke/prepare-pi
       - name: Authorize controller HTTPS client
         run: bash scripts/incus-smoke/authenticate
       - name: Prepare browser passkey probe

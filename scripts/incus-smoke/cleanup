@@ -2,7 +2,7 @@
 # Safe only within the explicitly disposable test environment.
 set -u
 [[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]] || exit 1
-for name in tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server tend-ci-gateway tend-ci-ingress-backend tend-ci-ingress-authorization tend-ci-ingress-client tend-ci-ingress-seed tend-ci-auth-gateway tend-ci-auth-service tend-ci-auth-backend tend-ci-auth-client tend-ci-authelia-seed tend-ci-grafana; do
+for name in tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server tend-ci-gateway tend-ci-ingress-backend tend-ci-ingress-authorization tend-ci-ingress-client tend-ci-ingress-seed tend-ci-auth-gateway tend-ci-auth-service tend-ci-auth-backend tend-ci-auth-client tend-ci-authelia-seed tend-ci-grafana tend-ci-pi; do
     timeout 30 sudo incus delete "$name" --force || true
 done
 timeout 30 sudo incus network acl delete tend-ci-egress || true
@@ -15,6 +15,11 @@ for acl in json.load(sys.stdin):
 ' | while IFS= read -r acl; do
     timeout 30 sudo incus network acl delete "$acl" || true
 done
+if sudo iptables -nL DOCKER-USER >/dev/null 2>&1; then
+    sudo iptables -D DOCKER-USER -i tend-ci-pi-net -j ACCEPT || true
+    sudo iptables -D DOCKER-USER -o tend-ci-pi-net -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT || true
+fi
+timeout 30 sudo incus network delete tend-ci-pi-net || true
 timeout 30 sudo incus network delete tend-ci-ovn || true
 timeout 30 sudo incus network delete tend-ci-uplink || true
 timeout 30 sudo incus storage volume delete tend-ci-pool tend-ci-data || true
@@ -28,7 +33,7 @@ for volume in json.load(sys.stdin):
 ' | while IFS= read -r volume; do
     timeout 30 sudo incus storage volume delete tend-ci-pool "$volume" || true
 done
-for image in tend-ci-caddy tend-ci-probe tend-ci-authelia tend-ci-grafana; do
+for image in tend-ci-caddy tend-ci-probe tend-ci-authelia tend-ci-grafana tend-ci-pi; do
     timeout 30 sudo incus image delete "$image" || true
 done
 sudo incus remote remove tend-ci-docker || true

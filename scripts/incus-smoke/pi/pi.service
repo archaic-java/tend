@@ -1,0 +1,36 @@
+[Unit]
+Description=Shared Pi coding agent and browser frontend
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/workspace /var/lib/pi
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/workspace
+Environment=HOME=/var/lib/pi
+Environment=PATH=/opt/node/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PI_CONFIG_DIR=/etc/homelab-pi
+Environment=PI_SESSION_DIR=/var/lib/pi/sessions
+Environment=PI_WEB_UI_HOST=0.0.0.0
+Environment=PI_WEB_UI_PORT=3001
+EnvironmentFile=/etc/homelab-pi/service.env
+ExecStart=/opt/node/bin/node /opt/pi-web-sandbox/service/cli.mjs
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+ReadWritePaths=/workspace /var/lib/pi
+
+[Install]
+WantedBy=multi-user.target

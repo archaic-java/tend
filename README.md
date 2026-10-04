@@ -50,7 +50,14 @@ and credential persistence across restart. It then deploys the real Grafana OCI 
 passkey OIDC login, application identity/admin roles, group and strict-role denial, and persistence
 across restart and Git configuration activation.
 
-The suite is separate from `cmd/test` and needs no homelab credentials or nested VMs. CI uploads
+A sixth case installs the pinned Pi web harness in a real Debian 13 cloud VM through Tend's
+XML `cloud-init.user-data`. It verifies successful cloud-init, the systemd service, built frontend
+and HTTP health, the unprivileged user and excluded Bash, and both custom data volumes across a
+no-op pass and explicit restart. Bootstrap updates and VM replacement remain deferred in
+[issue #9](https://github.com/archaic-java/tend/issues/9).
+
+The suite is separate from `cmd/test` and needs no homelab credentials. Pi requires nested KVM
+on the disposable runner; missing virtualization support fails the job. CI uploads
 command output, image fingerprint, package versions and Incus/OVN diagnostics on every run, then
 removes the test resources. See [docs/incus-smoke.md](docs/incus-smoke.md) for reproduction and scope.
 
