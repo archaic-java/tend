@@ -94,11 +94,29 @@ database; browser certificate and hostname checks remain enabled. CDP listens on
 and its messages, browser profile, logs, enrollment notifications and cookie transfers stay
 in the private garden directory, which is removed even on test failure. The probe drives
 Authelia's HTTP contracts and native WebAuthn APIs, not UI selectors. It does not test physical
-authenticators, biometrics, passkey synchronization, two-factor or OIDC flows.
+authenticators, biometrics, passkey synchronization or two-factor flows.
 Tend generates and mounts Authelia's session, storage and reset-password secrets under `/etc`;
 Alpine's boot-time `/run` tmpfs would hide disks mounted below that directory. Passwords, hashes,
 cookies, user databases and secret bytes are never uploaded; private fixture accounts are cached
 only in a disposable local image and login bodies reside in a private temporary directory.
+
+The authorization case finally commits an OIDC configuration and generated RSA signing key,
+HMAC value and client-secret/hash declarations. Authelia loads the PEM and hash with its native
+`template` filter; the confidential test client reads the raw value from its actual Incus mount.
+A JDK HTTP client trusts only the disposable public CA, retains hostname checks and follows no
+automatic redirects. The runner maps `auth.garden.internal` to loopback in `/etc/hosts` for this
+client; Chromium continues to use its explicit resolver mapping.
+
+The test checks discovery, anonymous login requirements, an authenticated observer denied by
+the OIDC client policy, passkey login for the permitted admin, explicit consent refusal/acceptance,
+and PKCE-S256 authorization-code exchange with `client_secret_basic`. It validates the actual
+ID-token signature against the issuer JWKS, issuer, audience, nonce, expiry and identity/group
+claims, then checks bearer userinfo against that identity. Negative checks cover an unregistered
+callback, mismatched state, wrong client secret, wrong PKCE verifier, replayed code, and rejected
+ID-token signature/issuer/audience/nonce/expiry. Restart must preserve signing keys and successful
+exchange. Tokens, codes, cookies and client credential stay in process memory or private temporary
+files outside the artifact directory; failure messages omit their bodies. This is a narrow protocol
+test client, not a JOSE library or a deployed Open WebUI/Grafana instance.
 
 The cases use different resources and evidence directories so concurrent Minau execution is safe.
 TLS keys, private Java arguments and controller state are outside the uploaded artifact. The test

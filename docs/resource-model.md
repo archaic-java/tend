@@ -67,8 +67,9 @@ regeneration occurs. Preserve this directory across controller replacement.
 
 The offline suite checks real RSA signing, an independent PBKDF2 vector, shared delivery,
 controller process restart, Git activation, rejected changes and private failure diagnostics.
-The vector was also accepted by the pinned Authelia 4.39.28 CLI; a live OIDC exchange remains
-for the next integration slice.
+The vector was also accepted by the pinned Authelia 4.39.28 CLI. The real integration fixture
+now loads the generated PEM and hash through Authelia's template filter and performs a
+confidential OIDC authorization-code exchange with the mounted raw client secret.
 
 A configuration contains root-level files sourced from regular Git files. The mount owns UID,
 GID and mode for every file. Defaults are UID/GID 0 and mode 0400; explicitly use 0644 for a normal
@@ -172,8 +173,9 @@ updates, drift and failed-operation recovery. The separate real integration suit
 storage semantics, OVN packet filtering, Caddy startup and public-route TLS. Authelia startup and
 one-factor proxy group authorization through password and passkey login now have real coverage.
 The passkey fixture requires discoverability and user verification, but `one_factor` permits
-password login too; Tend does not enforce exclusive use of passkeys. Two-factor and OIDC application
-integration remain unverified.
+password login too; Tend does not enforce exclusive use of passkeys. A confidential OIDC test
+client verifies discovery, explicit consent, group policy, PKCE, signed ID tokens and userinfo.
+Two-factor and actual Grafana/Open WebUI deployment remain unverified.
 
 ## Authoritative adapter contracts
 

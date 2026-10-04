@@ -104,6 +104,69 @@ final class AuthorizationFixture {
     String passkeyConfiguration() {
         return baseConfiguration().replace("\"log\":", "\"webauthn\":{\"enable_passkey_login\":true,\"attestation_conveyance_preference\":\"none\",\"selection_criteria\":{\"discoverability\":\"required\",\"user_verification\":\"required\"}},\"log\":");
     }
+    String oidcConfiguration() {
+        return """
+                identity_providers:
+                  oidc:
+                    jwks:
+                      - key: {{ secret "/etc/tend-oidc-signing/value" | mindent 10 "|" | msquote }}
+                        key_id: tend-smoke
+                        algorithm: RS256
+                        use: sig
+                    authorization_policies:
+                      garden:
+                        default_policy: deny
+                        rules:
+                          - policy: one_factor
+                            subject: [["group:admins"]]
+                    claims_policies:
+                      garden:
+                        id_token: [preferred_username, name, email, groups]
+                    clients:
+                      - client_id: tend-smoke
+                        client_name: Tend smoke
+                        client_secret: '{{ secret "/etc/tend-oidc-hash/value" }}'
+                        public: false
+                        authorization_policy: garden
+                        claims_policy: garden
+                        consent_mode: explicit
+                        redirect_uris: ["https://app.garden.internal/oauth/callback"]
+                        scopes: [openid, profile, email, groups]
+                        response_types: [code]
+                        response_modes: [query]
+                        grant_types: [authorization_code]
+                        require_pkce: true
+                        pkce_challenge_method: S256
+                        token_endpoint_auth_method: client_secret_basic
+                        id_token_signed_response_alg: RS256
+                """;
+    }
+    String oidcXml() throws IOException {
+        return xml("admins")
+                .replace("<configuration name=\"authelia-base\">", """
+                        <secret name="oidc-signing" kind="rsa-3072"/>
+                        <secret name="oidc-client-hash" kind="pbkdf2-sha512" source="oidc-client"/>
+                        <secret name="oidc-client" bytes="54"/><secret name="oidc-hmac" bytes="64"/>
+                        <configuration name="oidc"><file path="/oidc.yml" source="oidc.yml"/></configuration>
+                        <configuration name="authelia-base">
+                        """)
+                .replace("/etc/tend-base/configuration.json,/etc/tend-authorization", "/etc/tend-base/configuration.json,/etc/tend-oidc/oidc.yml,/etc/tend-authorization")
+                .replace("<entry key=\"environment.AUTHELIA_SESSION_SECRET_FILE\"", """
+                        <entry key="environment.X_AUTHELIA_CONFIG_FILTERS" value="template"/>
+                        <entry key="environment.AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE" value="/etc/tend-oidc-hmac/value"/>
+                        <entry key="environment.AUTHELIA_SESSION_SECRET_FILE"
+                        """)
+                .replace("<mount name=\"reset\"", """
+                        <mount name="oidc-config" configuration="oidc" pool="tend-ci-pool" path="/etc/tend-oidc" mode="0644"/>
+                        <mount name="oidc-signing" secret="oidc-signing" pool="tend-ci-pool" path="/etc/tend-oidc-signing"/>
+                        <mount name="oidc-hash" secret="oidc-client-hash" pool="tend-ci-pool" path="/etc/tend-oidc-hash"/>
+                        <mount name="oidc-hmac" secret="oidc-hmac" pool="tend-ci-pool" path="/etc/tend-oidc-hmac"/>
+                        <mount name="reset"
+                        """)
+                .replace(instance(BACKEND, garden.fingerprint, "10.77.1.41", "", ""), instance(BACKEND, garden.fingerprint, "10.77.1.41", "", """
+                        <mount name="oidc-client" secret="oidc-client" pool="tend-ci-pool" path="/etc/tend-oidc-client"/>
+                        """));
+    }
     String xml(String group) throws IOException {
         String caddy = Files.readString(Path.of("out/incus-smoke/caddy-fingerprint.txt")).strip();
         String authelia = Files.readString(Path.of("out/incus-smoke/authelia-fingerprint.txt")).strip();
