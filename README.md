@@ -43,7 +43,10 @@ allow/deny decisions, anonymous redirects, trusted identity forwarding, Git poli
 repair of independently activated authorization drift. It also enables passkeys from Git, enrolls
 discoverable credentials through Chromium WebAuthn, verifies passwordless login and failed
 assertions, and checks credential persistence across restart and Git activation. Password login
-remains supported under the explicit `one_factor` policy.
+remains supported under the explicit `one_factor` policy. The same case then exercises a
+confidential OIDC client with generated signing keys and shared client-secret/hash mounts:
+explicit consent, PKCE code exchange, JWKS signature and claim validation, failed requests,
+and credential persistence across restart.
 
 The suite is separate from `cmd/test` and needs no homelab credentials or nested VMs. CI uploads
 command output, image fingerprint, package versions and Incus/OVN diagnostics on every run, then
@@ -81,8 +84,8 @@ homelab deployment tool.
 See [docs/resource-model.md](docs/resource-model.md) for XML, Kubernetes comparisons, enforcement
 boundaries and the remaining homelab requirements. Policy generation is tested offline; OVN
 packet filtering, Tend reconciliation and public Caddy HTTPS routing are verified on the CI runner.
-Authelia startup and one-factor proxy group authorization are verified; two-factor and OIDC
-application integration remain unverified.
+Authelia startup, one-factor proxy authorization and a confidential OIDC protocol exchange are
+verified. Two-factor and deployment of actual OIDC consumers such as Open WebUI remain unverified.
 
 ## Run a controller
 

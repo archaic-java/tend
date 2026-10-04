@@ -150,6 +150,9 @@ final class PasskeyBrowser implements AutoCloseable {
         var parameters = id(); parameters.addProperty("isUserVerified", value); call("WebAuthn.setUserVerified", parameters);
     }
     void clearSession() throws Exception { call("Network.clearBrowserCookies", new JsonObject()); }
+    JsonArray sessionCookies() throws Exception {
+        return call("Network.getCookies", JsonParser.parseString("{\"urls\":[\"https://auth.garden.internal\"]}").getAsJsonObject()).getAsJsonArray("cookies");
+    }
     int password(String user) throws Exception {
         String fixture = Files.readString(Path.of("out/incus-smoke/authelia-fixture-directory.txt")).strip();
         String json = Files.readString(Path.of(fixture, user + ".json"));
