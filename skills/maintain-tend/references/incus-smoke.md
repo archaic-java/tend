@@ -6,6 +6,13 @@ network/authentication workloads are unprivileged system containers. The Pi inst
 a real cloud VM and requires nested KVM; missing support fails rather than skipping the case.
 The VM contains both OVN's central database/control plane and its local controller/Open vSwitch.
 
+## Contents
+
+- [What it proves](#what-it-proves)
+- [Inputs and evidence](#inputs-and-evidence)
+- [Reproduce on a disposable VM](#reproduce-on-a-disposable-vm)
+- [Adapter references](#adapter-references)
+
 ## What it proves
 
 The OVN Minau case starts two containers on `tend-ci-ovn`, with static IPv4 addresses. The server

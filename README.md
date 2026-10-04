@@ -17,85 +17,28 @@ java @cmd/run --help
 
 Preparation needs internet access. Compilation and tests then run offline. Minau v02 runs isolated
 cases against a stateful HTTP Incus mock and real temporary bare Git repositories. No live Incus
-credentials or GitHub credentials are needed. Dependencies are listed in [docs/development.md](docs/development.md).
+credentials or GitHub credentials are needed. Dependencies are listed in [development guidance](skills/maintain-tend/references/development.md).
 
-## Real Incus integration tests
+## Maintain Tend
 
-The `incus-smoke` job installs pinned Incus directly on a fresh `ubuntu-24.04` GitHub runner,
-configures standalone OVN, and runs `java @cmd/incus-smoke` with Minau. Two unprivileged Alpine
-containers expose two HTTP ports. The test proves both work, attaches an egress ACL, verifies
-8080 is allowed and 8081 is rejected, then detaches the ACL and verifies 8081 works again.
+Read the [maintenance skill](skills/maintain-tend/SKILL.md) for the project foundation and task map.
+It routes XML/resource changes, reconciliation, secrets, CLI/logging, dependency work and testing
+to their owning code and verification. Detailed guidance has one home under its references.
 
-A second Minau case invokes Tend’s CLI over authenticated HTTPS with a disposable Git remote.
-It verifies creation of a running container and mounted configuration volume, file ownership and
-mode, no restart on an unchanged pass, drift repair, and deployment of the next commit on `main`.
+## Resource and verification scope
 
-A third case exercises XML egress through Tend: it commits a port allowlist to `main`, verifies
-packet filtering, reverses the allowed port in a new commit, and repairs an independently added
-ACL rule without restarting the client.
+Tend supports declared instances, custom volumes and managed files, named configurations and
+stable generated secrets, Caddy/Authelia ingress and NIC-scoped OVN egress. Existing projects,
+pools, networks, cached images and operator-provisioned credentials remain prerequisites.
+See the [resource model](skills/maintain-tend/references/resource-model.md) for XML, ownership,
+retention, activation and unsupported operations. Validate all Git inputs before deployment mutations.
 
-A fourth case runs real Caddy with Tend's generated configuration. It verifies HTTPS with explicit
-CA trust, public-route identity header stripping, backend changes through Git, and repair of live
-routing drift.
-
-A fifth case runs Authelia with real password login and session cookies. It verifies group
-allow/deny decisions, anonymous redirects, trusted identity forwarding, Git policy changes and
-repair of independently activated authorization drift. It also enables passkeys from Git, enrolls
-discoverable credentials through Chromium WebAuthn, verifies passwordless login and failed
-assertions, and checks credential persistence across restart and Git activation. Password login
-remains supported under the explicit `one_factor` policy. The same case then exercises a
-confidential OIDC client with generated signing keys and shared client-secret/hash mounts:
-explicit consent, PKCE code exchange, JWKS signature and claim validation, failed requests,
-and credential persistence across restart. It then deploys the real Grafana OCI image and verifies
-passkey OIDC login, application identity/admin roles, group and strict-role denial, and persistence
-across restart and Git configuration activation.
-
-A sixth case installs the pinned Pi web harness in a real Debian 13 cloud VM through Tend's
-XML `cloud-init.user-data`. It verifies successful cloud-init, the systemd service, built frontend
-and HTTP health, the unprivileged user and excluded Bash, and both custom data volumes across a
-no-op pass and explicit restart. Bootstrap updates and VM replacement remain deferred in
-[issue #9](https://github.com/archaic-java/tend/issues/9).
-
-The suite is separate from `cmd/test` and needs no homelab credentials. Pi requires nested KVM
-on the disposable runner; missing virtualization support fails the job. CI uploads
-command output, image fingerprint, package versions and Incus/OVN diagnostics on every run, then
-removes the test resources. See [docs/incus-smoke.md](docs/incus-smoke.md) for reproduction and scope.
-
-## Current resource contract
-
-The controller reads `incus.xml` and referenced regular files from one resolved commit. XML is
-validated against [schema/tend.xsd](schema/tend.xsd); all referenced files and semantic constraints
-are resolved before external deployment mutations.
-
-Supported in this slice:
-
-- Existing Incus projects, pools and networks are bootstrap prerequisites.
-- Declared custom filesystem volumes, configuration keys and root-level files with UID/GID/mode.
-  Volumes containing managed files require explicit `security.shifted=true`; generated configuration
-  and secret volumes enable it automatically. The host filesystem must support idmapped mounts.
-- Named container or VM instances from images already cached in Incus, identified by full fingerprint.
-  A cached image may be OCI-derived; registry pulling is not implemented yet.
-- Explicit devices: disk, nic, gpu and unix-char; empty instance profiles.
-- Running/stopped desired state, configuration updates and stop/start activation for mounted files.
-- Named configurations sourced from Git, random secrets, RSA-3072 signing keys and derived PBKDF2-SHA512 client-secret hashes, with read-only consumer mounts.
-- Host ingress through an explicitly bound Caddy gateway and Authelia group authorization, defaulting to two-factor.
-- NIC-scoped egress allowlists lowered to Incus ACLs on existing OVN networks.
-- Ownership through `user.tend.*` configuration. Tend corrects declared fields, removes previously
-  managed keys/devices when omitted, and preserves unrelated configuration and Incus volatile fields.
-
-Instance image/type changes are rejected before mutation. Image replacement, registry pulls,
-application readiness, exec/reload hooks, nested files, project creation and deletion/pruning are
-future increments. Removing a declaration currently retains its instance, volume and files;
-removing a low-level volume file declaration does not delete the old file. Named configuration mounts
-use a new backing volume when the file set changes, so removed files are detached. This is a development slice, not a complete
-homelab deployment tool.
-
-See [docs/resource-model.md](docs/resource-model.md) for XML, Kubernetes comparisons, enforcement
-boundaries and the remaining homelab requirements. Policy generation is tested offline; OVN
-packet filtering, Tend reconciliation and public Caddy HTTPS routing are verified on the CI runner.
-Authelia startup, one-factor proxy authorization and a confidential OIDC protocol exchange are
-verified. Grafana OCI deployment and its OIDC integration are covered by the same fixture. Two-factor and
-Open WebUI deployment remain unverified.
+`cmd/test` runs offline fixtures. The separate `cmd/incus-smoke` suite verifies real Incus/OVN,
+reconciliation, Caddy routing, Authelia/passkey/OIDC, Grafana and Pi on a fresh disposable test VM.
+It requires operator-authorized disposable infrastructure, nested KVM and pinned application inputs;
+never run it against the homelab. Read [integration reproduction and evidence](skills/maintain-tend/references/incus-smoke.md)
+before running it. Iterate with the offline suite and run integration once after a coherent change
+is ready; repeat only to resolve a failure or after a change that invalidates the evidence.
 
 ## Run a controller
 
@@ -122,7 +65,9 @@ For example, the operator can mount private PKCS12 stores and a private Java arg
 ```
 
 Launch with `java @/run/tend/tls.args @cmd/run watch ...`; keep this file outside Git.
-Tend logs revision IDs and generic API errors, never secret values or HTTP bodies.
+Tend logs revision IDs and generic API errors to stderr, never secret values or HTTP bodies.
+Enable debug with `java -Dtend.debug=true @cmd/run ...`. Expected CLI failures exit with status 1;
+thread interruption exits with status 130. A reconciliation failure is reported once per attempt.
 
 One process locks its state directory. Bootstrap must provide one writer per ownership scope;
 separate state directories are not a distributed leader election mechanism. Failed passes leave
@@ -139,7 +84,7 @@ docker build -t tend:local .
 docker run --rm tend:local --help
 ```
 
-The image runs as UID/GID 1000 and contains the JRE, Git, Tend, Peep, the catalog and Gson.
+The image runs as UID/GID 1000 and contains the JRE, Git, Tend, Culpa, the catalog and Gson.
 An authorized Incus operator will create the controller instance, attach a persistent custom
 volume at `/var/lib/tend`, supply TLS credentials and grant access to the intended project.
 The OCI `VOLUME` declaration does not provision that Incus volume. Set the instance entrypoint to
@@ -150,4 +95,4 @@ No image is published by this workflow, and the existing homelab is untouched. S
 and rotation remain deferred. Deleting the controller secret directory loses generated credentials;
 preserve its volume during replacement.
 
-See [docs/development.md](docs/development.md) for test boundaries and the implementation sequence.
+See [development guidance](skills/maintain-tend/references/development.md) for test boundaries and the implementation sequence.
