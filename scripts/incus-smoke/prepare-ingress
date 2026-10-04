@@ -13,13 +13,14 @@ sudo incus start tend-ci-ingress-seed
 # Fetch signed Alpine packages using the host network; OVN guests require no internet access.
 mkdir "$fixture/apks"
 timeout 120 docker run --rm --network host -v "$fixture/apks:/packages" alpine:3.22 \
-    sh -c 'apk update && apk fetch --recursive --output /packages curl'
+    sh -c 'apk update && apk fetch --recursive --output /packages curl dnsmasq'
 docker image inspect alpine:3.22 --format '{{json .RepoDigests}}' >out/incus-smoke/package-fetch-image.txt
 sha256sum "$fixture"/apks/*.apk >out/incus-smoke/curl-packages-sha256.txt
 sudo incus file push --recursive "$fixture/apks" tend-ci-ingress-seed/root/
 sudo incus exec tend-ci-ingress-seed -- sh -c 'apk add --no-network /root/apks/*.apk'
 sudo incus exec tend-ci-ingress-seed -- rm -rf /root/apks
 sudo incus exec tend-ci-ingress-seed -- apk info -v curl >out/incus-smoke/curl-package.txt
+sudo incus exec tend-ci-ingress-seed -- apk info -v dnsmasq >out/incus-smoke/dnsmasq-package.txt
 sudo incus stop tend-ci-ingress-seed
 sudo incus publish tend-ci-ingress-seed --alias tend-ci-probe
 sudo incus start tend-ci-ingress-seed

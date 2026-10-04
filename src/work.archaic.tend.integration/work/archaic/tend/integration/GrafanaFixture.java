@@ -109,6 +109,7 @@ final class GrafanaFixture {
                         <instance name="tend-ci-grafana" fingerprint="%s">
                           <config>
                             <entry key="oci.uid" value="472"/><entry key="oci.gid" value="0"/>
+                            <entry key="oci.dns.nameservers" value="10.77.1.40"/>
                             <entry key="environment.GF_PATHS_CONFIG" value="/etc/tend-grafana/grafana.ini"/>
                             <entry key="environment.GF_SECURITY_ADMIN_PASSWORD__FILE" value="/etc/tend-grafana-admin/value"/>
                             <entry key="environment.GF_SECURITY_SECRET_KEY__FILE" value="/etc/tend-grafana-key/value"/>
@@ -131,9 +132,8 @@ final class GrafanaFixture {
     }
     void dns() throws Exception {
         // The fixture's private domain is intentionally absent from public DNS.
-        Path hosts = garden.directory.resolve("grafana-hosts");
-        Files.writeString(hosts, "127.0.0.1 localhost\n10.77.1.40 auth.garden.internal\n");
-        incus.require("file", "push", hosts.toString(), INSTANCE + "/etc/hosts", "--mode=0644");
+        incus.require("exec", AuthorizationFixture.GATEWAY, "--", "dnsmasq", "--no-hosts", "--no-resolv",
+                "--address=/auth.garden.internal/10.77.1.40", "--listen-address=10.77.1.40", "--bind-interfaces");
     }
     void ready() throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();

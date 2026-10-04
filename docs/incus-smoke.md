@@ -123,8 +123,10 @@ a persistent custom data volume and read-only configuration/secret mounts. Tend 
 admin password, encryption key, confidential client secret and matching Authelia hash. A public
 Caddy route forwards to Grafana, which performs its own OIDC authorization. Grafana trusts the
 fixture CA explicitly, uses PKCE-S256 and client-secret Basic authentication, and validates the
-ID token against the provider JWKS. Operator bootstrap writes only the private domain’s public
-address mapping to the disposable guest’s `/etc/hosts`; Tend gains no exec or DNS feature.
+ID token against the provider JWKS. Operator bootstrap starts a fixture-only dnsmasq on the
+gateway for the private provider domain. The OCI guest selects it through Incus’s existing
+`oci.dns.nameservers` configuration; Tend gains no exec or DNS feature. Incus manages the
+OCI guest’s read-only `/etc/hosts` and `/etc/resolv.conf` files.
 
 The real browser follows Grafana’s login redirect, authenticates with Carol’s enrolled passkey,
 accepts explicit consent and returns through Grafana’s callback. Grafana itself exchanges the
@@ -152,8 +154,8 @@ uses the normal JSSE client/trust stores and hostname verification; there is no 
   and image information are retained in `image.txt` for each run.
 - Caddy: official `caddy_2.11.7_linux_amd64.tar.gz`, SHA-256
   `727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b`. Bootstrap verifies the
-  archive, installs curl from Alpine 3.22, and records curl's version and derived image fingerprints.
-  Bootstrap fetches signed curl packages in `alpine:3.22` through the host Docker network,
+  archive, installs curl and fixture DNS packages from Alpine 3.22, and records versions and derived image fingerprints.
+  Bootstrap fetches signed curl/dnsmasq packages in `alpine:3.22` through the host Docker network,
   records its image digest and package checksums, and installs them offline in Incus. OVN guests
   require no internet access. Caddy's private CA keys
   remain inside its disposable root disk; only its public root certificate is observed.

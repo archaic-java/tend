@@ -282,7 +282,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 String grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
                 garden.reconcile();
                 assert garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Unchanged OCI desired state must not restart Grafana";
-                incus.require("restart", GrafanaFixture.INSTANCE); grafana.dns(); grafana.ready();
+                incus.require("restart", GrafanaFixture.INSTANCE); grafana.ready();
                 user = browser.applicationUser();
                 assert user.get("status").getAsInt() == 200 && user.get("id").getAsInt() == userId && user.get("admin").getAsBoolean() : "Grafana session and user identity must survive restart with the persistent data volume and secret key";
                 browser.privateValues(); browser.clearSession(); browser.portal();
@@ -296,7 +296,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
                 garden.source("grafana.ini", grafana.configuration("admins observers"));
                 String strictRevision = garden.commitXml(grafana.xml(), "Exercise strict role rejection independently of group admission");
-                garden.reconcile(); grafana.dns(); grafana.ready();
+                garden.reconcile(); grafana.ready();
                 assert garden.lastSuccess().equals(strictRevision) && !garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Git configuration changes must activate the real OCI consumer";
                 browser.navigate(GrafanaFixture.ORIGIN + "/login/generic_oauth", OidcFixture.ISSUER);
                 browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
