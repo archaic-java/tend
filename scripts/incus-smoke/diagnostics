@@ -80,3 +80,9 @@ for name in tend-ci-native-gateway tend-ci-native-auth tend-ci-native-backend te
     capture "$name-state" sudo incus info "$name"
 done
 capture native-lan sudo incus network show tend-ci-nlan
+
+for name in tend-ci-prometheus tend-ci-monitor-grafana; do
+    capture "$name-config" sudo incus config show "$name" --expanded
+    capture "$name-state" sudo incus info "$name"
+done
+# Monitoring keys, curl credentials, raw Grafana logs and TLS stores are excluded.

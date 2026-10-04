@@ -61,6 +61,53 @@ record UpstreamIngressAndPrivateMetrics() implements TestCase {
             assert fixture.ca().equals(ca) : "Caddy data/config volumes must retain its CA across activation/restart";
             assert fixture.request("pi.native.localhost", "/", "carol", false).output().contains("status=200") : "Gateway restart must preserve authorized service access";
             trail.note("Generated policy activation uses upstream OCI execution; unchanged passes and retained Caddy identity survive restart");
+
+            var monitoring = new MonitoringFixture(incus, garden, fixture);
+            monitoring.sources();
+            String monitorRevision = garden.commitXml(monitoring.xml(), "Provision actual Prometheus and Grafana monitoring");
+            garden.reconcile(); fixture.ready();
+            assert garden.lastSuccess().equals(monitorRevision) : "Monitoring must activate the complete desired Git revision";
+            for (String job : new String[]{"prometheus", "caddy", "authelia", "grafana", "incus"})
+                assert monitoring.target(job, "up") : "Every enabled live monitoring target must be healthy within its readiness bound";
+            assert monitoring.target("llama", "down") : "An idle/unavailable model must remain down without being loaded by monitoring";
+            boolean idleModel = false;
+            for (var target : monitoring.targets().getAsJsonObject("data").getAsJsonArray("activeTargets")) {
+                var observed = target.getAsJsonObject();
+                if (!observed.getAsJsonObject("labels").get("job").getAsString().equals("llama")) continue;
+                idleModel = observed.getAsJsonObject("labels").get("model").getAsString().equals("tiny-ci") && observed.get("scrapeUrl").getAsString().contains("autoload=false") && observed.get("scrapeUrl").getAsString().contains("model=tiny-ci");
+            }
+            assert idleModel : "Llama scraping must preserve model identity and explicitly disable autoload";
+            assert monitoring.metricsAdminStatus() == 403 : "The enrolled metrics certificate must not authorize administrator instance access";
+            var ownership = incus.run(Duration.ofSeconds(10), "exec", MonitoringFixture.PROMETHEUS, "--", "stat", "-c", "%u:%g:%a", "/prometheus", "/etc/incus-tls/client.key", "/etc/prometheus/prometheus.yml");
+            assert ownership.status() == 0 && ownership.output().strip().equals("65534:65534:700\n65534:65534:400\n65534:65534:644") : "Prometheus data, private key and configuration must have explicit consumer ownership";
+            monitoring.admin();
+            var datasource = monitoring.grafana("/api/datasources/uid/prometheus");
+            assert datasource.get("type").getAsString().equals("prometheus") && datasource.get("url").getAsString().equals("http://10.79.0.24:9090") : "Grafana API must report the actual provisioned datasource";
+            var dashboard = monitoring.grafana("/api/dashboards/uid/homelab-incus");
+            assert dashboard.getAsJsonObject("meta").get("provisioned").getAsBoolean() && dashboard.getAsJsonObject("dashboard").get("title").getAsString().equals("Incus instances") : "Grafana must load the existing flattened Incus dashboard through its file provider";
+            var proxied = monitoring.grafana("/api/datasources/proxy/uid/prometheus/api/v1/query?query=up%7Bjob%3D%22incus%22%7D");
+            assert proxied.get("status").getAsString().equals("success") && proxied.getAsJsonObject("data").getAsJsonArray("result").get(0).getAsJsonObject().getAsJsonArray("value").get(1).getAsString().equals("1") : "Grafana's actual datasource must return scraped authenticated Incus data";
+            String prometheusStarted = garden.started(MonitoringFixture.PROMETHEUS), grafanaStarted = garden.started(MonitoringFixture.GRAFANA);
+            String adminIdentity = monitoring.adminIdentity();
+            garden.reconcile();
+            assert garden.started(MonitoringFixture.PROMETHEUS).equals(prometheusStarted) && garden.started(MonitoringFixture.GRAFANA).equals(grafanaStarted) : "No-op monitoring passes must preserve both OCI processes";
+            monitoring.credential("untrusted");
+            assert monitoring.target("incus", "down") && monitoring.target("caddy", "up") : "An unenrolled credential must fail Incus scraping while unrelated targets remain healthy";
+            monitoring.credential("wrong-server");
+            assert monitoring.target("incus", "down") : "Unrelated server trust must fail verified TLS without a bypass";
+            monitoring.credential("valid");
+            assert monitoring.target("incus", "up") : "Restoring the dedicated certificate and server CA must recover scraping";
+            var sample = monitoring.query("up{job=\"incus\"}").getAsJsonObject("data").getAsJsonArray("result").get(0).getAsJsonObject().getAsJsonArray("value");
+            String sampleTime = sample.get(0).getAsString();
+            incus.require("restart", MonitoringFixture.PROMETHEUS);
+            assert monitoring.target("incus", "up") : "Prometheus must recover its actual targets after restart";
+            var historical = monitoring.query("up{job=\"incus\"} @ " + sampleTime).getAsJsonObject("data").getAsJsonArray("result");
+            assert historical.size() == 1 && historical.get(0).getAsJsonObject().getAsJsonArray("value").get(1).getAsString().equals("1") : "Retained TSDB/WAL must preserve a pre-restart sample";
+            incus.require("restart", MonitoringFixture.GRAFANA);
+            assert monitoring.target("grafana", "up") : "Grafana must restart with readable provisioning and retained data";
+            assert monitoring.adminIdentity().equals(adminIdentity) && monitoring.grafana("/api/dashboards/uid/homelab-incus").has("dashboard") : "Restart must preserve generated administrator identity and actual dashboard provisioning";
+            assert monitoring.secretsExcluded() : "Metrics key and Grafana private credentials must stay out of command artifacts";
+            trail.note("Actual Prometheus scraping, metrics-only verified TLS, Grafana datasource/dashboard/query and retained TSDB verified");
         }
     }
 }

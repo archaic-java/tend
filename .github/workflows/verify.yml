@@ -63,6 +63,8 @@ jobs:
         run: bash scripts/incus-smoke/prepare-controller
       - name: Cache upstream Caddy and Authelia OCI images
         run: bash scripts/incus-smoke/prepare-native-ingress
+      - name: Cache Prometheus and enroll a separate metrics credential
+        run: bash scripts/incus-smoke/prepare-monitoring
       - name: Prepare browser passkey probe
         run: |
           sudo apt-get update

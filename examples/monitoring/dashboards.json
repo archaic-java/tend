@@ -1,0 +1,16 @@
+{
+  "apiVersion": 1,
+  "providers": [
+    {
+      "name": "homelab",
+      "orgId": 1,
+      "folder": "Homelab",
+      "type": "file",
+      "disableDeletion": false,
+      "allowUiUpdates": false,
+      "options": {
+        "path": "/etc/tend-dashboards"
+      }
+    }
+  ]
+}

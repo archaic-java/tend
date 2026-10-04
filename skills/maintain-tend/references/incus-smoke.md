@@ -212,6 +212,13 @@ HTTP and WebSocket authorization, forged identity removal, private-only Caddy me
 policy activation and retained Caddy CA. It does not use the OpenRC wrappers. Public ACME
 issuance remains operator acceptance; the browser/OIDC cases above retain their independent scope.
 
+The same native case adds actual Prometheus v3.12.0 and a separate Grafana provisioning consumer.
+It checks live Prometheus/Caddy/Authelia/Grafana/Incus targets, dedicated metrics-only TLS and
+negative certificate/server-trust recovery, the idle llama model's non-autoload request, actual
+Grafana datasource/dashboard/query, no-op identity and historical TSDB data after restart.
+See [monitoring inputs and ownership](monitoring.md). The later llama case supplies actual model
+commissioning evidence; a down idle target is deliberately distinct from a failed live service job.
+
 ## Inputs and evidence
 
 - GitHub runner OS label: `ubuntu-24.04`, AMD64.
@@ -279,6 +286,7 @@ bash scripts/incus-smoke/prepare-pi
 bash scripts/incus-smoke/authenticate
 bash scripts/incus-smoke/prepare-controller
 bash scripts/incus-smoke/prepare-native-ingress
+bash scripts/incus-smoke/prepare-monitoring
 sudo apt-get install -y libnss3-tools
 google-chrome --version >out/incus-smoke/browser-version.txt
 echo '127.0.0.1 auth.garden.internal' | sudo tee -a /etc/hosts >/dev/null

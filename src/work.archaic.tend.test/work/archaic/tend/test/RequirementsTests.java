@@ -21,6 +21,7 @@ public record RequirementsTests() implements TestSuite {
         cases.add(new RemovedConfigurationFile());
         cases.add(new IngressProjection());
         cases.add(new PrivateGatewayMetrics());
+        cases.add(new FlatMonitoringProvisioning());
         cases.add(new IngressIdempotence());
         cases.add(new AuthorizationActivationFails());
         cases.add(new EgressProjection());
@@ -336,6 +337,34 @@ record PrivateGatewayMetrics() implements TestCase {
             boolean rejected = false;
             try { f.revision(xml.replace("10.20.0.12", "203.0.113.12"), "unchanged"); } catch (StateException e) { rejected = true; }
             assert rejected && f.mock.mutations == mutations : "Public-address metrics must reject before mutation";
+        }
+    }
+}
+
+record FlatMonitoringProvisioning() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (var f = new DeploymentFixture()) {
+            for (String file : List.of("prometheus.json", "datasources.json", "dashboards.json", "incus.json"))
+                java.nio.file.Files.copy(java.nio.file.Path.of("examples/monitoring", file), f.garden.author.resolve(file));
+            String xml = java.nio.file.Files.readString(java.nio.file.Path.of("examples/monitoring/incus.xml")).replace("private-owner=\"garden\"", "private-owner=\"test-controller\"");
+            var privateConfig = JsonParser.parseString("""
+                    {"config":{"user.tend.private":"test-controller","user.tend.private.kind":"metrics","security.shifted":"true","initial.uid":"65534","initial.gid":"65534","initial.mode":"0700"}}
+                    """).getAsJsonObject();
+            f.mock.resources.put("/1.0/storage-pools/pool/volumes/custom/incus-metrics", privateConfig.deepCopy());
+            var desired = f.revision(xml, "monitoring"); f.engine.reconcile(desired);
+            var dashboards = f.mock.files.entrySet().stream().filter(e -> e.getKey().endsWith("/incus.json")).findFirst().orElseThrow().getValue();
+            assert dashboards.uid().equals("472") && dashboards.gid().equals("0") && dashboards.mode().equals("0644") : "Flat dashboards must be readable by the Grafana OCI UID";
+            var prometheus = f.mock.files.entrySet().stream().filter(e -> e.getKey().endsWith("/prometheus.yml")).findFirst().orElseThrow().getValue();
+            assert prometheus.uid().equals("65534") && prometheus.gid().equals("65534") : "Prometheus configuration must use its actual OCI identity";
+            var config = JsonParser.parseString(new String(prometheus.bytes(), java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+            var jobs = config.getAsJsonArray("scrape_configs");
+            assert jobs.size() == 6 : "The monitoring recipe must declare all six required scrape jobs";
+            var llama = jobs.get(5).getAsJsonObject();
+            assert llama.getAsJsonObject("params").getAsJsonArray("autoload").get(0).getAsString().equals("false") : "An idle model must never be activated just by a monitoring request";
+            var tls = jobs.get(4).getAsJsonObject().getAsJsonObject("tls_config");
+            assert tls.has("server_name") && tls.has("ca_file") && tls.has("cert_file") && tls.has("key_file") && !tls.has("insecure_skip_verify") : "Incus scraping requires explicit server identity/trust and separate private client credentials";
+            int mutations = f.mock.mutations; f.engine.reconcile(desired);
+            assert f.mock.mutations == mutations && f.mock.resources.get("/1.0/storage-pools/pool/volumes/custom/incus-metrics").equals(privateConfig) : "Unchanged monitoring must settle while retaining operator-owned TLS";
         }
     }
 }

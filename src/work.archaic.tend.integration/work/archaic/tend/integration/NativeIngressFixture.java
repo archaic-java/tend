@@ -8,7 +8,8 @@ import java.util.*;
 /** Upstream OCI services and an independent HTTP/WebSocket backend on ordinary private bridges. */
 final class NativeIngressFixture {
     static final String GATEWAY = "tend-ci-native-gateway", AUTH = "tend-ci-native-auth";
-    private static final String BACKEND = "tend-ci-native-backend", CLIENT = "tend-ci-native-client";
+    private static final String BACKEND = "tend-ci-native-backend";
+    static final String CLIENT = "tend-ci-native-client";
     private final IncusCommands incus;
     private final RealGarden garden;
     NativeIngressFixture(IncusCommands incus, RealGarden garden) { this.incus = incus; this.garden = garden; }
