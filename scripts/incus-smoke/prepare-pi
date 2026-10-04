@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Cache the same cloud VM release as homelab; Tend still selects a full fingerprint.
+set -euo pipefail
+[[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]]
+mkdir -p out/incus-smoke
+sudo modprobe kvm
+[[ -c /dev/kvm ]] || { echo 'Pi smoke requires working nested KVM; use a capable disposable VM.' >&2; exit 1; }
+ls -l /dev/kvm >out/incus-smoke/kvm.txt
+if sudo incus network show tend-ci-pi-net >/dev/null 2>&1; then
+    echo 'Pi network already exists; use a fresh disposable VM.' >&2
+    exit 1
+fi
+sudo incus network create tend-ci-pi-net --type=bridge \
+    ipv4.address=10.78.0.1/24 ipv4.nat=true ipv6.address=none
+# Docker's forwarding policy must not block this disposable bridge's installer traffic.
+if sudo iptables -nL DOCKER-USER >/dev/null 2>&1; then
+    sudo iptables -I DOCKER-USER -i tend-ci-pi-net -j ACCEPT
+    sudo iptables -I DOCKER-USER -o tend-ci-pi-net -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+fi
+timeout 240 sudo incus image copy images:debian/13/cloud local: --vm --alias tend-ci-pi
+sudo incus image info tend-ci-pi --vm >out/incus-smoke/pi-image.txt
+sed -n 's/^Fingerprint: //p' out/incus-smoke/pi-image.txt >out/incus-smoke/pi-fingerprint.txt

@@ -51,6 +51,14 @@ capture grafana sudo incus config show tend-ci-grafana --expanded
 capture grafana-state sudo incus info tend-ci-grafana
 capture grafana-data sudo incus storage volume show tend-ci-pool tend-ci-grafana-data
 # Grafana's file log is inspected privately by the case; do not upload OAuth error logs or its console.
+capture pi sudo incus config show tend-ci-pi --expanded
+capture pi-state sudo incus info tend-ci-pi
+capture pi-cloud-init sudo incus exec tend-ci-pi -- cloud-init status --long
+capture pi-installer sudo incus exec tend-ci-pi -- tail -n 150 /var/log/cloud-init-output.log
+capture pi-service sudo incus exec tend-ci-pi -- systemctl status homelab-pi --no-pager
+capture pi-mounts sudo incus exec tend-ci-pi -- findmnt
+capture pi-network sudo incus network show tend-ci-pi-net
+# Pi has only synthetic configuration and no credentials. Do not upload session/workspace contents.
 # Never capture user databases, secret files, cookies, login bodies or private keys.
 capture volumes sudo incus storage volume list tend-ci-pool
 capture operations sudo incus operation list

@@ -177,7 +177,11 @@ password login too; Tend does not enforce exclusive use of passkeys. A confident
 client verifies discovery, explicit consent, group policy, PKCE, signed ID tokens and userinfo.
 The same fixture deploys the real Grafana OCI image: passkey OIDC login, application identity
 and admin roles, independent group/strict-role denial, and persistence across restart and Git
-activation. Two-factor and Open WebUI deployment remain unverified.
+activation. The Pi smoke case covers initial cloud-init installation in a real Debian VM, its HTTP
+frontend/health and both persistent data volumes across restart. Readiness checks belong to the
+test fixture; Tend itself still treats completed Incus operations as activation. Pi bootstrap
+updates and safe replacement remain deferred in [issue #9](https://github.com/archaic-java/tend/issues/9).
+Two-factor and Open WebUI deployment remain unverified.
 
 ## Authoritative adapter contracts
 
