@@ -123,7 +123,9 @@ a persistent custom data volume and read-only configuration/secret mounts. Tend 
 admin password, encryption key, confidential client secret and matching Authelia hash. A public
 Caddy route forwards to Grafana, which performs its own OIDC authorization. Grafana trusts the
 fixture CA explicitly, uses PKCE-S256 and client-secret Basic authentication, and validates the
-ID token against the provider JWKS. Operator bootstrap starts a fixture-only dnsmasq on the
+ID token against the provider JWKS. The configuration supplies both `tls_client_ca` and
+`SSL_CERT_FILE`: this Grafana version fetches JWKS through Go's default HTTP client.
+Operator bootstrap starts a fixture-only dnsmasq on the
 gateway for the private provider domain. The OCI guest selects it through Incus’s existing
 `oci.dns.nameservers` configuration; Tend gains no exec or DNS feature. Incus manages the
 OCI guest’s read-only `/etc/hosts` and `/etc/resolv.conf` files.
@@ -132,8 +134,9 @@ The real browser follows Grafana’s login redirect, authenticates with Carol’
 accepts explicit consent and returns through Grafana’s callback. Grafana itself exchanges the
 code. Its user API must report Carol’s actual name/email/login, global admin status and Admin
 organization role. The provider permits Bob, then Grafana independently denies him through
-`allowed_groups`; a Git change admits observers to the group list while strict role mapping
-still denies Bob’s unmapped role. No-op reconciliation preserves the process, restart preserves
+`allowed_groups` while Bob has a valid Viewer role; a Git change admits observers to the group
+list and removes that fallback role, so strict role mapping independently denies Bob.
+Private application logs must confirm both denial reasons. No-op reconciliation preserves the process, restart preserves
 the session, and a fresh login after Git activation preserves the same user ID and admin role.
 Browser cookies/codes and mounted secret values are checked against command evidence and
 privately read application logs. Grafana’s raw console is never uploaded, including on failure.

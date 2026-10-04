@@ -253,7 +253,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 }
                 var grafana = new GrafanaFixture(incus, garden, fixture);
                 garden.source("oidc.yml", grafana.provider());
-                garden.source("grafana.ini", grafana.configuration("admins"));
+                garden.source("grafana.ini", grafana.configuration("admins", "Viewer"));
                 garden.source("root.crt", Files.readString(garden.directory.resolve("root.crt")));
                 String grafanaRevision = garden.commitXml(grafana.xml(), "Deploy real Grafana OCI consumer with confidential OIDC");
                 garden.reconcile(); fixture.ready(); grafana.dns(); grafana.ready();
@@ -294,7 +294,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 user = browser.applicationUser();
                 assert user.get("status").getAsInt() == 401 : "Grafana must reject a provider-authenticated user outside its allowed groups";
                 grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
-                garden.source("grafana.ini", grafana.configuration("admins observers"));
+                garden.source("grafana.ini", grafana.configuration("admins observers", "None"));
                 String strictRevision = garden.commitXml(grafana.xml(), "Exercise strict role rejection independently of group admission");
                 garden.reconcile(); grafana.ready();
                 assert garden.lastSuccess().equals(strictRevision) && !garden.started(GrafanaFixture.INSTANCE).equals(grafanaStarted) : "Git configuration changes must activate the real OCI consumer";
@@ -309,7 +309,9 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
                 user = browser.applicationUser();
                 assert user.get("status").getAsInt() == 200 && user.get("id").getAsInt() == userId && user.get("admin").getAsBoolean() : "Fresh OIDC login after Git activation must retain the same Grafana user and admin mapping";
-                assert !grafana.leakedInEvidence(browser.privateValues()) : "Grafana secrets, browser sessions, authorization codes and JWTs must stay out of service logs and uploaded evidence";
+                var evidence = grafana.evidence(browser.privateValues());
+                assert evidence.groupDenied() && evidence.roleDenied() : "Grafana must report both the independent group denial and strict unmapped-role denial";
+                assert !evidence.leaked() : "Grafana secrets, browser sessions, authorization codes and JWTs must stay out of service logs and uploaded evidence";
                 trail.note("Real Grafana OCI login, identity, group/strict-role decisions and persistent data verified");
                 System.out.println("Grafana smoke: OCI consumer completes passkey OIDC login, maps identity and admin roles, denies outside-group and unmapped-role users, and preserves identity across restart and Git activation.");
             }
