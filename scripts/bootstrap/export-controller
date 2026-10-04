@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Operator workstation only: reviewed Docker build -> OCI bundle -> Incus split image.
+set -euo pipefail
+if [[ ${1:-} == --help ]]; then
+    echo 'Usage: sudo bash scripts/bootstrap/export-controller NEW_OUTPUT_DIRECTORY'
+    exit 0
+fi
+[[ $# == 1 ]] || { echo 'Expected a new output directory; run --help.' >&2; exit 1; }
+[[ $EUID == 0 ]] || { echo 'OCI unpack/export requires workstation root; never run this on IncusOS.' >&2; exit 1; }
+for tool in docker skopeo umoci python3 git tar; do command -v "$tool" >/dev/null; done
+cd "$(dirname "$0")/../.."
+git -c "safe.directory=$PWD" diff --quiet && git -c "safe.directory=$PWD" diff --cached --quiet
+[[ -z $(git -c "safe.directory=$PWD" ls-files --others --exclude-standard) ]] || { echo 'Build a clean reviewed checkout.' >&2; exit 1; }
+revision=$(git -c "safe.directory=$PWD" rev-parse HEAD)
+destination=$(realpath -m -- "$1")
+[[ ! -e $destination ]] || { echo 'Output exists; choose a new directory.' >&2; exit 1; }
+umask 077
+mkdir -p -- "$destination"
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+image="tend:revision-$revision"
+docker build --build-arg "TEND_REVISION=$revision" -t "$image" .
+docker image inspect "$image" >"$work/docker.json"
+docker save "$image" -o "$work/docker.tar"
+skopeo copy "docker-archive:$work/docker.tar" "oci:$work/oci:controller"
+umoci unpack --image "$work/oci:controller" "$work/bundle"
+python3 - "$work" "$destination" "$revision" <<'PY'
+import json, pathlib, sys
+work, destination = map(pathlib.Path, sys.argv[1:3])
+revision = sys.argv[3]
+image = json.loads((work/'docker.json').read_text())[0]
+assert image['Architecture'] == 'amd64' and image['Os'] == 'linux', 'Review a supported platform'
+assert image['Config']['Labels']['org.opencontainers.image.revision'] == revision
+digest = json.loads((work/'oci/index.json').read_text())['manifests'][0]['digest']
+metadata = dict(architecture='x86_64', creation_date=int(__import__('time').time()),
+    properties={'type':'oci', 'description':'Tend OCI controller',
+                'tend.revision':revision, 'tend.oci.digest':digest})
+(work/'bundle/metadata.yaml').write_text(json.dumps(metadata))
+(destination/'provenance.json').write_text(json.dumps(dict(revision=revision,
+    docker_image_id=image['Id'], oci_manifest_digest=digest, platform='linux/amd64'), indent=2)+'\n')
+PY
+tar -C "$work/bundle" -czf "$destination/metadata.tar.gz" metadata.yaml config.json
+tar --numeric-owner -C "$work/bundle/rootfs" -czf "$destination/rootfs.tar.gz" .
+(cd "$destination" && sha256sum metadata.tar.gz rootfs.tar.gz provenance.json >SHA256SUMS)
+echo "Controller artifact ready: $destination (revision $revision). Import both archives; record the full Incus fingerprint."

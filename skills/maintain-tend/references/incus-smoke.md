@@ -36,7 +36,24 @@ isolates ACL attachment and filtering rather than guest recovery after NIC repla
 Probes use new TCP connections, bounded command timeouts and readiness polling. No ICMP/ping
 assumptions, public ingress, certificates or guest internet access are involved. Assertions are
 inline Java assertions run with `-ea`. This case proves environment provisioning and actual packet
-filtering; it does not prove OCI bootstrap, secret permissions, Caddy/Authelia startup or user authentication.
+filtering; the separate cases below cover controller bootstrap and application authentication.
+
+The controller case builds the reviewed Tend Docker revision, exports its OCI runtime bundle,
+and imports the split image through the operator procedure in
+[OCI controller bootstrap](oci-controller.md). It starts the actual UID 1000 Java `watch`
+process inside native Incus OCI execution, using a read-only private TLS/arguments volume,
+a retained state volume, and a separate read-only bare Git volume. A project-restricted
+client authenticates over verified HTTPS through the private bridge at `10.79.0.1`.
+The runner publishes commits; it never launches Tend to reconcile this case.
+
+The case checks application creation and changed-main activation, stable unchanged passes,
+stop/start and replacement with retained random/RSA identity and last-success. Missing Git,
+an unrelated trust anchor and revoked API authorization must fail within a bounded interval,
+preserve the previous success, and recover after repair. Missing Git must also leave deliberate
+application drift untouched, proving a failed fetch does not deploy cached main. Private state,
+console output and TLS store passwords are inspected privately and excluded from artifacts.
+Only image provenance, public configuration, mount/UID checks and redacted test notes are retained.
+These are disposable synthetic credentials; no production host is contacted.
 
 A separate reconciliation case runs the actual `once` CLI over HTTPS with an operator-authorized
 client certificate and a pinned server trust store. It authors XML and a configuration file in a
@@ -228,10 +245,10 @@ needs no repository secrets, external Incus credentials or published test images
 ## Reproduce on a disposable VM
 
 These scripts install packages, change host network services and create/delete fixed-name Incus
-resources in the default project. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
+resources in the default and `tend-ci-oci` projects. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
 existing Incus host. The scripts require `TEND_DISPOSABLE_RUNNER=yes` as an explicit environment
 selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3, Docker, Google Chrome and working host internet access. Host loopback port 443 must be free. Nested KVM must be available and the additional Pi subnet
-`10.78.0.0/24` must not conflict with existing routes.
+`10.78.0.0/24` and controller bridge `10.79.0.0/24` must not conflict with existing routes.
 
 From Tend's repository root:
 
@@ -246,6 +263,7 @@ bash scripts/incus-smoke/prepare-authelia
 bash scripts/incus-smoke/prepare-grafana
 bash scripts/incus-smoke/prepare-pi
 bash scripts/incus-smoke/authenticate
+bash scripts/incus-smoke/prepare-controller
 sudo apt-get install -y libnss3-tools
 google-chrome --version >out/incus-smoke/browser-version.txt
 echo '127.0.0.1 auth.garden.internal' | sudo tee -a /etc/hosts >/dev/null

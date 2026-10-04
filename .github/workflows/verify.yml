@@ -19,6 +19,7 @@ jobs:
       - run: javac @cmd/compile
       - run: java @cmd/test
       - run: java @cmd/run --help
+      - run: python3 scripts/bootstrap/test-controller
   oci:
     runs-on: ubuntu-latest
     steps:
@@ -52,6 +53,8 @@ jobs:
         run: bash scripts/incus-smoke/prepare-pi
       - name: Authorize controller HTTPS client
         run: bash scripts/incus-smoke/authenticate
+      - name: Build and import the actual Tend OCI controller
+        run: bash scripts/incus-smoke/prepare-controller
       - name: Prepare browser passkey probe
         run: |
           sudo apt-get update

@@ -61,6 +61,12 @@ capture pi-network sudo incus network show tend-ci-pi-net
 # Pi has only synthetic configuration and no credentials. Do not upload session/workspace contents.
 # Never capture user databases, secret files, cookies, login bodies or private keys.
 capture volumes sudo incus storage volume list tend-ci-pool
+capture oci-controller sudo incus config show tend-ci-watch --project tend-ci-oci --expanded
+capture oci-controller-state sudo incus info tend-ci-watch --project tend-ci-oci
+capture oci-application sudo incus config show tend-ci-oci-app --project tend-ci-oci --expanded
+capture oci-controller-network sudo incus network show tend-ci-controller-net
+# Never capture the controller console, private Java arguments, Git auth or secret/state bytes.
+# The case inspects them privately and reports only safe assertions.
 capture operations sudo incus operation list
 capture acl sudo incus network acl show tend-ci-egress
 capture client-console sudo incus console tend-ci-client --show-log

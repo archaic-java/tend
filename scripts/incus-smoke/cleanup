@@ -2,6 +2,28 @@
 # Safe only within the explicitly disposable test environment.
 set -u
 [[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]] || exit 1
+# Stop the OCI writer first so it cannot recreate application resources during teardown.
+timeout 30 sudo incus delete tend-ci-watch --project tend-ci-oci --force || true
+timeout 30 sudo incus delete tend-ci-oci-app --project tend-ci-oci --force || true
+timeout 30 sudo incus storage volume list tend-ci-pool --project tend-ci-oci --format=json 2>/dev/null | python3 -c '
+import json,sys
+for volume in json.load(sys.stdin):
+    config=volume.get("config", {})
+    if volume.get("type") == "custom" and (config.get("user.tend.bootstrap") == "tend-ci-oci" or config.get("user.tend.owner") == "tend-ci-oci"):
+        print(volume["name"])
+' | while IFS= read -r volume; do
+    timeout 30 sudo incus storage volume delete tend-ci-pool "$volume" --project tend-ci-oci || true
+done
+timeout 30 sudo incus project delete tend-ci-oci || true
+timeout 30 sudo incus network delete tend-ci-controller-net || true
+timeout 30 sudo incus image delete tend-ci-controller-oci || true
+if [[ -f out/incus-smoke/controller-directory.txt ]]; then
+    controller=$(cat out/incus-smoke/controller-directory.txt)
+    if [[ $controller == /tmp/tend-ci-controller.* ]]; then
+        timeout 30 sudo incus config trust remove "$(cat "$controller/client-fingerprint")" || true
+        sudo rm -rf -- "$controller"
+    fi
+fi
 for name in tend-ci-client tend-ci-server tend-ci-managed tend-ci-policy-client tend-ci-policy-server tend-ci-gateway tend-ci-ingress-backend tend-ci-ingress-authorization tend-ci-ingress-client tend-ci-ingress-seed tend-ci-auth-gateway tend-ci-auth-service tend-ci-auth-backend tend-ci-auth-client tend-ci-authelia-seed tend-ci-grafana tend-ci-pi; do
     timeout 30 sudo incus delete "$name" --force || true
 done

@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Remote Incus API only. The authorized operator owns these resources, not Tend.
+set -euo pipefail
+if [[ ${1:-} == --help ]]; then
+    echo 'Usage: controller create|reuse REMOTE PROJECT POOL NETWORK FINGERPRINT INSTANCE STATE_VOLUME BOOTSTRAP_VOLUME OWNER PRIVATE_DIRECTORY'
+    echo 'Private directory: client.p12, trust.p12, java.args, controller.args; optional .gitconfig and git-credentials.'
+    exit 0
+fi
+[[ $# == 11 ]] || { echo 'Expected 11 arguments; run --help.' >&2; exit 1; }
+mode=$1 remote=$2 project=$3 pool=$4 network=$5 fingerprint=$6 instance=$7 state=$8 bootstrap=$9
+owner=${10} private=${11}
+[[ $mode == create || $mode == reuse ]] || { echo 'Mode must be create or reuse.' >&2; exit 1; }
+for name in "$remote" "$project" "$pool" "$network" "$instance" "$state" "$bootstrap" "$owner"; do
+    [[ $name =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$ ]] || { echo 'Invalid resource identifier.' >&2; exit 1; }
+done
+[[ $fingerprint =~ ^[a-f0-9]{64}$ && $state != "$bootstrap" ]] || { echo 'Expected a full image fingerprint and distinct volumes.' >&2; exit 1; }
+for tool in incus timeout python3; do command -v "$tool" >/dev/null; done
+# Reject shared permissions and symlinks before any resource mutation. Never print file bytes.
+python3 - "$private" <<'PY'
+import pathlib, stat, sys
+p = pathlib.Path(sys.argv[1])
+def private_file(path, directory=False):
+    mode = path.lstat().st_mode
+    if stat.S_ISLNK(mode) or mode & 0o077:
+        raise SystemExit('Bootstrap inputs must be private regular files in a private directory')
+    if directory and not stat.S_ISDIR(mode): raise SystemExit('Expected a private directory')
+    if not directory and not stat.S_ISREG(mode): raise SystemExit('Expected a private regular file')
+try:
+    private_file(p, True)
+    for name in ['client.p12','trust.p12','java.args','controller.args']:
+        private_file(p/name)
+    for name in ['.gitconfig','git-credentials']:
+        if (p/name).exists(): private_file(p/name)
+except OSError:
+    raise SystemExit('Cannot read private bootstrap inputs') from None
+PY
+umask 077
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+run() {
+    if ! timeout 120 incus "$@" >"$work/result" 2>&1; then
+        echo 'Bootstrap API operation failed or timed out. Reobserve resources before retry; private output was withheld.' >&2
+        exit 1
+    fi
+}
+run project show "$remote:$project"
+run storage show "$remote:$pool"
+run network show "$remote:$network" --project "$project"
+run query "$remote:/1.0/images/$fingerprint?project=$project"
+python3 - "$work/result" <<'PY'
+import json, sys
+image=json.load(open(sys.argv[1]))
+if image.get('architecture') != 'x86_64' or image.get('type') != 'container' or image.get('properties',{}).get('type') != 'oci':
+    raise SystemExit('Expected a cached x86_64 OCI controller image')
+if not image.get('properties',{}).get('tend.revision'):
+    raise SystemExit('Controller artifact lacks reviewed revision provenance')
+PY
+run list "$remote:" --project "$project" --format=json
+python3 - "$work/result" "$instance" <<'PY'
+import json, sys
+if any(x['name']==sys.argv[2] for x in json.load(open(sys.argv[1]))):
+    raise SystemExit('Controller name already exists; stop and review ownership before replacement')
+PY
+run storage volume list "$remote:$pool" --project "$project" --format=json
+python3 - "$work/result" "$mode" "$state" "$bootstrap" "$owner" <<'PY'
+import json, sys
+volumes={x['name']:x for x in json.load(open(sys.argv[1])) if x['type']=='custom'}
+for name in sys.argv[3:5]:
+    if sys.argv[2]=='create':
+        if name in volumes: raise SystemExit('Bootstrap volume name already exists; refusing adoption')
+        continue
+    volume=volumes.get(name)
+    if volume is None: raise SystemExit('Recorded bootstrap volume is missing')
+    config=volume.get('config',{})
+    expected={'user.tend.bootstrap':sys.argv[5], 'security.shifted':'true',
+              'initial.uid':'1000','initial.gid':'1000','initial.mode':'0700'}
+    if any(config.get(k)!=v for k,v in expected.items()):
+        raise SystemExit('Bootstrap volume owner/configuration differs; refusing reuse')
+    if volume.get('used_by'): raise SystemExit('Stop/remove the previous controller before reuse; one writer only')
+PY
+if [[ $mode == create ]]; then
+    for volume in "$state" "$bootstrap"; do
+        run storage volume create "$remote:$pool" "$volume" --project "$project" \
+            security.shifted=true initial.uid=1000 initial.gid=1000 initial.mode=0700 "user.tend.bootstrap=$owner"
+    done
+    for file in client.p12 trust.p12 java.args controller.args .gitconfig git-credentials; do
+        [[ -f $private/$file ]] || continue
+        run storage volume file push "$private/$file" "$remote:$pool" "$bootstrap/$file" \
+            --project "$project" --uid=1000 --gid=1000 --mode=0400
+    done
+fi
+run init "$remote:$fingerprint" "$remote:$instance" --project "$project" --no-profiles \
+    --storage "$pool" --network "$network" \
+    -c "user.tend.bootstrap=$owner" -c security.privileged=false \
+    -c boot.autostart=true -c boot.autorestart=true \
+    -c oci.uid=1000 -c oci.gid=1000 -c oci.cwd=/app \
+    -c environment.HOME=/etc/tend-bootstrap \
+    -c 'oci.entrypoint=java @/etc/tend-bootstrap/java.args @cmd/run @/etc/tend-bootstrap/controller.args'
+run config device add "$remote:$instance" state disk --project "$project" \
+    "pool=$pool" "source=$state" path=/var/lib/tend
+run config device add "$remote:$instance" bootstrap disk --project "$project" \
+    "pool=$pool" "source=$bootstrap" path=/etc/tend-bootstrap readonly=true
+# Deliberately leave stopped: verify project authorization and private inputs before watch.
+echo "Controller $instance prepared, stopped. Verify the ledger and start it explicitly. Retain both bootstrap volumes."

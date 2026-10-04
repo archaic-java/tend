@@ -29,6 +29,7 @@ final class RealGarden implements AutoCloseable {
         return commitXml(xml(version), "Desired state " + version);
     }
     void source(String name, String text) throws IOException { Files.writeString(author.resolve(name), text); }
+    Path remote() { return remote; }
     String commitXml(String xml, String message) throws IOException, InterruptedException {
         Files.writeString(author.resolve("incus.xml"), xml);
         git("add", "."); git("commit", "-m", message); git("push", "origin", "main");

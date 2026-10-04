@@ -40,6 +40,7 @@ Use this entry point for both human contributors and coding agents.
 | Change Incus protocol handling or mock behavior | [Mock fidelity](references/development.md#incus-mock-fidelity), [integration](references/incus-smoke.md) | IncusClient and IncusMock; offline failures/recovery, then affected real-host cases. |
 | Run or extend real-host verification | [Integration reproduction and evidence](references/incus-smoke.md), [development coverage](references/development.md#real-host-integration) | Separate integration module and scripts/incus-smoke; preserve diagnostics and cleanup. |
 | Bootstrap a reset IncusOS host | [Remote bootstrap](references/incusos-bootstrap.md), [manifest template](references/bootstrap-manifest.example.md) | Operator procedure only; validate actual network roles, image fingerprints, TLS and target storage before handing off to the controller. |
+| Build/import, install or replace the OCI controller | [OCI controller](references/oci-controller.md), [integration evidence](references/incus-smoke.md) | scripts/bootstrap and ControllerSmokeTests; retain state, private credentials and one writer; bootstrap is operator-owned. |
 
 ## Complete the change
 

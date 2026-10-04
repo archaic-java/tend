@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Offline safety checks for operator bootstrap; no real Incus or credentials."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+script = Path(__file__).resolve().with_name('controller')
+with tempfile.TemporaryDirectory(prefix='tend-bootstrap-test-', dir=os.environ.get('TMPDIR')) as temporary:
+    root = Path(temporary)
+    private = root/'private'
+    private.mkdir(mode=0o700)
+    for name in ['client.p12','trust.p12','java.args','controller.args']:
+        (private/name).write_text('synthetic-private-input\n')
+        (private/name).chmod(0o600)
+    executable = root/'incus'
+    executable.write_text('''#!/usr/bin/env python3
+import json, os, sys
+a=sys.argv[1:]
+with open(os.environ['TEST_CALLS'],'a') as f: f.write(json.dumps(a)+'\\n')
+mode=os.environ['TEST_MODE']
+if a[0]=='query': print(json.dumps(dict(architecture='x86_64',type='container',properties={'type':'oci','tend.revision':'reviewed'})))
+elif a[0]=='list': print(json.dumps([{'name':'watch'}] if mode=='instance-collision' else []))
+elif a[:3]==['storage','volume','list']:
+    config={'user.tend.bootstrap':'operator','security.shifted':'true','initial.uid':'1000','initial.gid':'1000','initial.mode':'0700'}
+    if mode=='wrong-owner': config['user.tend.bootstrap']='unrelated'
+    volumes=[] if mode in ['create','instance-collision'] else [dict(name=n,type='custom',config=config,used_by=['old-writer'] if mode=='in-use' else []) for n in ['state','bootstrap']]
+    print(json.dumps(volumes))
+''')
+    executable.chmod(0o700)
+    calls = root/'calls'
+    environment = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'], TEST_CALLS=str(calls), TMPDIR=str(root))
+    def run(mode, observation):
+        calls.write_text('')
+        result = subprocess.run(['bash',str(script),mode,'remote','garden','pool','bridge','a'*64,
+                                 'watch','state','bootstrap','operator',str(private)],
+                                env=dict(environment,TEST_MODE=observation),capture_output=True,text=True)
+        assert 'synthetic-private-input' not in result.stdout+result.stderr, 'Private bytes must never be diagnostics'
+        return result, [json.loads(x) for x in calls.read_text().splitlines()]
+    def mutations(commands):
+        return [c for c in commands if c[0]=='init' or 'create' in c or 'push' in c or 'add' in c]
+    result, observed = run('create','create')
+    assert result.returncode == 0, result.stderr
+    assert len(mutations(observed)) == 9, 'Create must add exactly two volumes, four inputs, one guest and two mounts'
+    assert not any(c[0]=='start' for c in observed), 'Operator must explicitly authorize starting watch'
+    result, observed = run('create','instance-collision')
+    assert result.returncode != 0 and not mutations(observed), 'A conflicting guest must fail before writes'
+    result, observed = run('create','existing-volumes')
+    assert result.returncode != 0 and not mutations(observed), 'Create must never adopt existing volumes'
+    result, observed = run('reuse','existing-volumes')
+    assert result.returncode == 0 and len(mutations(observed)) == 3, 'Reuse must preserve both volumes and all private inputs'
+    for reason in ['wrong-owner','in-use']:
+        result, observed = run('reuse',reason)
+        assert result.returncode != 0 and not mutations(observed), 'Reuse must reject wrong ownership or another writer'
+    (private/'java.args').chmod(0o644)
+    result, observed = run('create','create')
+    assert result.returncode != 0 and not observed, 'Shared private inputs must fail before any API access'
+    print('Bootstrap safety: create/reuse, collision, ownership, one-writer and private-input checks passed (7 cases).')
