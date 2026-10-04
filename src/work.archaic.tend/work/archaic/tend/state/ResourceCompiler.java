@@ -83,10 +83,9 @@ public final class ResourceCompiler {
         return configuration.files().stream().map(f -> new DesiredState.File(f.path(), f.content(), "", mount.uid(), mount.gid(), mount.mode())).toList();
     }
     private void gateway(DesiredState state, Map<String, Instance> instances, List<Volume> volumes) throws StateException {
-        if (state.gateway() == null) {
-            if (!state.ingresses().isEmpty()) throw new StateException("Ingress requires an explicit gateway binding");
-            return;
-        }
+        if (state.gateway() == null && !state.ingresses().isEmpty())
+            throw new StateException("Ingress requires an explicit gateway binding");
+        if (state.gateway() == null) return;
         var binding = state.gateway();
         if (binding.uid() < 0 || binding.gid() < 0 || binding.authorizationUid() < 0 || binding.authorizationGid() < 0)
             throw new StateException("Gateway UID and GID must be nonnegative");
@@ -105,15 +104,9 @@ public final class ResourceCompiler {
             if (!ingress.host().matches("[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+") || !hosts.add(ingress.host()))
                 throw new StateException("Ingress hosts must be unique literal DNS names");
             String backend = address(instance(instances, ingress.instance()), ingress.device());
-            caddy.append(ingress.host()).append(" {\n    route {\n");
-            // Untrusted client identity headers must not survive a public or protected route.
-            caddy.append("        request_header -Remote-User\n        request_header -Remote-Groups\n        request_header -Remote-Email\n        request_header -Remote-Name\n");
-            if (!ingress.publicAccess()) {
-                caddy.append("        forward_auth ").append(address).append(':').append(binding.authorizationPort()).append(" {\n")
-                        .append("            uri /api/authz/forward-auth\n            copy_headers Remote-User Remote-Groups Remote-Email Remote-Name\n        }\n");
-                accessRules.add(accessRule(ingress));
-            }
-            caddy.append("        reverse_proxy ").append(backend).append(':').append(ingress.port()).append("\n    }\n}\n");
+            renderRoute(caddy, ingress, backend, address, binding.authorizationPort());
+            if (ingress.publicAccess()) continue;
+            accessRules.add(accessRule(ingress));
         }
         if (accessRules.isEmpty()) {
             JsonObject deny = new JsonObject(); JsonArray domains = new JsonArray(); domains.add("*");
@@ -123,6 +116,17 @@ public final class ResourceCompiler {
         JsonObject document = new JsonObject(); document.add("access_control", policy);
         instances.put(authorization.name(), generated(authorization, volumes, "authorization", binding.pool(), binding.authorizationPath(), "access-control.json", document.toString(), binding.authorizationUid(), binding.authorizationGid()));
         instances.put(proxy.name(), generated(proxy, volumes, "ingress", binding.pool(), binding.path(), "Caddyfile", caddy.toString(), binding.uid(), binding.gid()));
+    }
+    private static void renderRoute(StringBuilder caddy, Ingress ingress, String backend, String authorization, int port) {
+        caddy.append(ingress.host()).append(" {\n    route {\n");
+        // Untrusted client identity headers must not survive a public or protected route.
+        caddy.append("        request_header -Remote-User\n        request_header -Remote-Groups\n        request_header -Remote-Email\n        request_header -Remote-Name\n");
+        if (!ingress.publicAccess()) renderAuthorization(caddy, authorization, port);
+        caddy.append("        reverse_proxy ").append(backend).append(':').append(ingress.port()).append("\n    }\n}\n");
+    }
+    private static void renderAuthorization(StringBuilder caddy, String address, int port) {
+        caddy.append("        forward_auth ").append(address).append(':').append(port).append(" {\n")
+                .append("            uri /api/authz/forward-auth\n            copy_headers Remote-User Remote-Groups Remote-Email Remote-Name\n        }\n");
     }
     private static JsonObject accessRule(Ingress ingress) throws StateException {
         if (ingress.groups().isEmpty()) throw new StateException("Protected ingress requires at least one group");

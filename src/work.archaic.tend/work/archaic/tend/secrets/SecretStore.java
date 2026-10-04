@@ -46,67 +46,85 @@ public final class SecretStore {
             create(file, Base64.getUrlEncoder().withoutPadding().encode(random));
         }
         byte[] stored = read(file);
-        try {
-            if (Base64.getUrlDecoder().decode(stored).length != bytes) throw new SecretException("Stored secret length differs; explicit rotation required");
-        } catch (IllegalArgumentException e) { throw new SecretException("Stored secret is invalid"); }
+        if (randomLength(stored) != bytes) throw new SecretException("Stored secret length differs; explicit rotation required");
         return stored;
+    }
+    private static int randomLength(byte[] stored) throws SecretException {
+        try { return Base64.getUrlDecoder().decode(stored).length; }
+        catch (IllegalArgumentException e) { throw new SecretException("Stored secret is invalid"); }
     }
     private byte[] typed(Secret secret, byte[] source) throws IOException {
         Path file = file(secret.name());
+        String digest = source == null ? "" : sourceDigest(source);
+        String header = "tend-secret-v1\n" + secret.kind() + "\n" + secret.source() + "\n" + digest + "\n";
+        if (!Files.exists(file)) {
+            String value = source == null ? rsa() : hash(source, randomSalt());
+            create(file, (header + value).getBytes(StandardCharsets.US_ASCII));
+        }
+        String stored = new String(read(file), StandardCharsets.US_ASCII);
+        if (!stored.startsWith(header)) throw new SecretException("Stored secret generator or source differs; explicit rotation required");
+        String value = stored.substring(header.length());
+        validateValue(value, source);
+        return value.getBytes(StandardCharsets.US_ASCII);
+    }
+    private static String sourceDigest(byte[] source) {
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source)); }
+        catch (NoSuchAlgorithmException e) { throw new AssertionError("JDK must support SHA-256", e); }
+    }
+    private static String rsa() throws SecretException {
         try {
-            String digest = source == null ? "" : HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source));
-            String header = "tend-secret-v1\n" + secret.kind() + "\n" + secret.source() + "\n" + digest + "\n";
-            if (!Files.exists(file)) {
-                String value = source == null ? rsa() : hash(source, randomSalt());
-                create(file, (header + value).getBytes(StandardCharsets.US_ASCII));
-            }
-            String stored = new String(read(file), StandardCharsets.US_ASCII);
-            if (!stored.startsWith(header)) throw new SecretException("Stored secret generator or source differs; explicit rotation required");
-            String value = stored.substring(header.length());
-            if (source == null) validateRsa(value); else validateHash(value, source);
-            return value.getBytes(StandardCharsets.US_ASCII);
-        } catch (GeneralSecurityException | IllegalArgumentException e) {
-            // Provider exceptions may contain input. Keep diagnostics independent of secret material.
-            throw new SecretException("Stored secret or cryptographic operation is invalid");
+            var generator = KeyPairGenerator.getInstance("RSA"); generator.initialize(3072);
+            return "-----BEGIN PRIVATE KEY-----\n" + Base64.getMimeEncoder(64, new byte[]{'\n'})
+                    .encodeToString(generator.generateKeyPair().getPrivate().getEncoded()) + "\n-----END PRIVATE KEY-----\n";
+        } catch (GeneralSecurityException e) {
+            // Cryptographic provider causes can contain private material; do not retain them.
+            throw new SecretException("Cannot generate signing key");
         }
     }
-    private static String rsa() throws GeneralSecurityException {
-        var generator = KeyPairGenerator.getInstance("RSA"); generator.initialize(3072);
-        return "-----BEGIN PRIVATE KEY-----\n" + Base64.getMimeEncoder(64, new byte[]{'\n'})
-                .encodeToString(generator.generateKeyPair().getPrivate().getEncoded()) + "\n-----END PRIVATE KEY-----\n";
+    private static void validateValue(String value, byte[] source) throws SecretException {
+        if (source == null) { validateRsa(value); return; }
+        validateHash(value, source);
     }
-    private static void validateRsa(String pem) throws GeneralSecurityException {
+    private static void validateRsa(String pem) throws SecretException {
         String begin = "-----BEGIN PRIVATE KEY-----\n", end = "\n-----END PRIVATE KEY-----\n";
-        if (!pem.startsWith(begin) || !pem.endsWith(end)) throw new IllegalArgumentException();
+        if (!pem.startsWith(begin) || !pem.endsWith(end)) throw new SecretException("Stored signing key is invalid");
         String body = pem.substring(begin.length(), pem.length() - end.length()).replace("\n", "");
-        var key = KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(body)));
+        var encoded = decode(body);
+        PrivateKey key;
+        try { key = KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(encoded)); }
+        catch (GeneralSecurityException e) { throw new SecretException("Stored signing key is invalid"); }
         if (!(key instanceof RSAPrivateCrtKey rsa) || rsa.getModulus().bitLength() != 3072 || !rsa.getPublicExponent().equals(java.math.BigInteger.valueOf(65537)))
-            throw new IllegalArgumentException();
+            throw new SecretException("Stored signing key parameters differ");
+    }
+    private static byte[] decode(String value) throws SecretException {
+        try { return Base64.getDecoder().decode(value); }
+        catch (IllegalArgumentException e) { throw new SecretException("Stored secret encoding is invalid"); }
     }
     private static byte[] randomSalt() {
         byte[] salt = new byte[16]; new SecureRandom().nextBytes(salt); return salt;
     }
-    private static String hash(byte[] source, byte[] salt) throws GeneralSecurityException {
+    private static String hash(byte[] source, byte[] salt) throws SecretException {
         char[] password = new String(source, StandardCharsets.US_ASCII).toCharArray();
         var spec = new PBEKeySpec(password, salt, ITERATIONS, 512);
         Arrays.fill(password, '\0');
         try {
             byte[] result = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512").generateSecret(spec).getEncoded();
             return "$pbkdf2-sha512$" + ITERATIONS + "$" + adaptedBase64(salt) + "$" + adaptedBase64(result);
-        } finally { spec.clearPassword(); }
+        } catch (GeneralSecurityException e) { throw new SecretException("Cannot derive secret hash"); }
+        finally { spec.clearPassword(); }
     }
     private static String adaptedBase64(byte[] value) {
         return Base64.getEncoder().withoutPadding().encodeToString(value).replace('+', '.');
     }
-    private static void validateHash(String value, byte[] source) throws GeneralSecurityException {
+    private static void validateHash(String value, byte[] source) throws SecretException {
         String[] fields = value.split("\\$", -1);
         if (fields.length != 5 || !fields[1].equals("pbkdf2-sha512") || !fields[2].equals(Integer.toString(ITERATIONS)))
-            throw new IllegalArgumentException();
-        byte[] salt = Base64.getDecoder().decode(fields[3].replace('.', '+'));
+            throw new SecretException("Stored hash parameters differ");
+        byte[] salt = decode(fields[3].replace('.', '+'));
         if (salt.length != 16 || !MessageDigest.isEqual(value.getBytes(StandardCharsets.US_ASCII), hash(source, salt).getBytes(StandardCharsets.US_ASCII)))
-            throw new IllegalArgumentException();
+            throw new SecretException("Stored hash is invalid");
     }
-    private Path file(String name) throws IOException {
+    private Path file(String name) throws SecretException {
         if (!name.matches("[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}")) throw new SecretException("Invalid secret declaration");
         Path file = directory.resolve(name);
         if (Files.isSymbolicLink(file) || (Files.exists(file) && !Files.isRegularFile(file))) throw new SecretException("Secret file must be a regular file");

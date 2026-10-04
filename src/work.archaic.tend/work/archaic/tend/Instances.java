@@ -22,24 +22,29 @@ final class Instances {
         JsonArray names = new JsonArray(); new TreeMap<>(desired.devices()).keySet().forEach(names::add);
         config.addProperty(DEVICES, names.toString());
         String activation = activation(desired, volumeDigests);
-        boolean activated = current != null && activation.equals(value(current.value().getAsJsonObject("config"), ACTIVATED));
-        if (current == null) {
-            create(desired, config, devices);
-        } else if (!config.equals(current.value().getAsJsonObject("config")) || !devices.equals(current.value().getAsJsonObject("devices")) ||
-                !current.value().getAsJsonArray("profiles").isEmpty()) {
-            if (running(path)) action(path, "stop");
-            updateInstance(path, config, devices);
-            activated = false;
-        }
+        boolean activated = prepareInstance(desired, current, config, devices, activation);
         if (!activated && running(path)) action(path, "stop");
         if (desired.running() && !running(path)) action(path, "start");
         if (!desired.running() && running(path)) action(path, "stop");
-        if (!activated) {
-            config.addProperty(ACTIVATED, activation);
-            updateInstance(path, config, devices);
-        }
+        if (activated) return;
+        config.addProperty(ACTIVATED, activation);
+        updateInstance(path, config, devices);
     }
-    private JsonObject devices(IncusClient.Resource current, Map<String, Map<String, String>> desired) throws IOException {
+    private boolean prepareInstance(DesiredState.Instance desired, IncusClient.Resource current, JsonObject config,
+                            JsonObject devices, String activation) throws IOException, InterruptedException {
+        if (current == null) {
+            create(desired, config, devices);
+            return false;
+        }
+        if (config.equals(current.value().getAsJsonObject("config")) && devices.equals(current.value().getAsJsonObject("devices")) &&
+                current.value().getAsJsonArray("profiles").isEmpty())
+            return activation.equals(value(current.value().getAsJsonObject("config"), ACTIVATED));
+        String path = instancePath(desired.name());
+        if (running(path)) action(path, "stop");
+        updateInstance(path, config, devices);
+        return false;
+    }
+    private JsonObject devices(IncusClient.Resource current, Map<String, Map<String, String>> desired) throws ReconciliationException {
         JsonObject devices = current == null ? new JsonObject() : current.value().getAsJsonObject("devices").deepCopy();
         if (current != null) for (String name : tracked(current.value().getAsJsonObject("config"), DEVICES)) devices.remove(name);
         for (var entry : new TreeMap<>(desired).entrySet()) {
@@ -88,11 +93,14 @@ final class Instances {
         JsonObject merged = current.value().getAsJsonObject("config").deepCopy();
         for (String key : tracked(merged, KEYS)) merged.remove(key);
         Set<String> managed = new HashSet<>(tracked(config, KEYS));
-        for (var entry : config.entrySet())
-            if (entry.getKey().startsWith("user.tend.") || managed.contains(entry.getKey())) {
-                if (entry.getValue().getAsString().isEmpty()) merged.remove(entry.getKey());
-                else merged.add(entry.getKey(), entry.getValue());
+        for (var entry : config.entrySet()) {
+            if (!entry.getKey().startsWith("user.tend.") && !managed.contains(entry.getKey())) continue;
+            if (entry.getValue().getAsString().isEmpty()) {
+                merged.remove(entry.getKey());
+                continue;
             }
+            merged.add(entry.getKey(), entry.getValue());
+        }
         body.add("config", merged); body.add("devices", devices); body.add("profiles", new JsonArray());
         incus.mutate("PUT", path, body, current.etag());
     }

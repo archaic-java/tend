@@ -37,10 +37,7 @@ final class PasskeyBrowser implements AutoCloseable {
         if (portal.status() != 0 || !portal.output().startsWith("200:text/html")) throw new IOException("Portal HTTPS response probe failed: " + portal.output());
         Path nss = Path.of(System.getProperty("user.home"), ".pki/nssdb");
         Files.createDirectories(nss);
-        if (!Files.exists(nss.resolve("cert9.db"))) {
-            var result = incus.command(Duration.ofSeconds(15), List.of("certutil", "-N", "--empty-password", "-d", "sql:" + nss));
-            if (result.status() != 0) throw new IOException("Cannot initialize browser CA trust");
-        }
+        initializeTrustDatabase(incus, nss);
         var trust = incus.command(Duration.ofSeconds(15), List.of("certutil", "-A", "-d", "sql:" + nss, "-n", "Tend disposable Caddy CA", "-t", "C,,", "-i", ca.toString()));
         if (trust.status() != 0) throw new IOException("Cannot trust disposable gateway CA");
         try {
@@ -56,80 +53,97 @@ final class PasskeyBrowser implements AutoCloseable {
             if (!Files.exists(portFile)) throw new IOException("Browser did not start its loopback probe endpoint");
             int port = Integer.parseInt(Files.readAllLines(portFile).getFirst());
             http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
-            {
-                JsonObject page = null;
-                deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
-                while (page == null) {
-                    var reply = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/json/list"))
-                            .timeout(Duration.ofSeconds(5)).build(), HttpResponse.BodyHandlers.ofString());
-                    for (var entry : JsonParser.parseString(reply.body()).getAsJsonArray()) {
-                        var target = entry.getAsJsonObject();
-                        if (target.get("type").getAsString().equals("page") && target.get("url").getAsString().equals("about:blank")) {
-                            page = target; break;
-                        }
-                    }
-                    if (page == null) {
-                        if (System.nanoTime() > deadline) throw new IOException("Browser did not expose its blank page target");
-                        Thread.sleep(100);
-                    }
-                }
-                socket = http.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(5))
-                        .buildAsync(URI.create(page.get("webSocketDebuggerUrl").getAsString()), new WebSocket.Listener() {
-                            private final StringBuilder text = new StringBuilder();
-                            public void onOpen(WebSocket ws) { ws.request(1); }
-                            public CompletionStage<?> onText(WebSocket ws, CharSequence part, boolean last) {
-                                text.append(part);
-                                if (last) {
-                                    var message = JsonParser.parseString(text.toString()).getAsJsonObject(); text.setLength(0);
-                                    if (message.has("id")) responses.add(message);
-                                    else if (message.has("method")) {
-                                        String method = message.get("method").getAsString();
-                                        var parameters = message.getAsJsonObject("params");
-                                        if (method.equals("Network.requestWillBeSent")) {
-                                            var uri = URI.create(parameters.getAsJsonObject("request").get("url").getAsString());
-                                            if (uri.getHost() != null && uri.getHost().endsWith(".garden.internal")) {
-                                                try {
-                                                    String code = OidcFixture.query(uri).get("code");
-                                                    if (code != null) privateValues.add(code);
-                                                } catch (IOException malformedQuery) { navigationEvidence.append(" malformedQuery"); }
-                                            }
-                                        }
-                                        if (navigationEvidence.length() < 3000) {
-                                            if (method.equals("Network.loadingFailed")) navigationEvidence.append(" loadingFailed=").append(parameters.get("errorText")).append("; blocked=").append(parameters.get("blockedReason")).append("; canceled=").append(parameters.get("canceled"));
-                                            else if (method.equals("Security.certificateError")) navigationEvidence.append(" certificateError=").append(parameters.get("errorType"));
-                                            else if (method.equals("Network.responseReceived")) {
-                                                var response = parameters.getAsJsonObject("response");
-                                                navigationEvidence.append(" response=").append(parameters.get("type")).append(':').append(response.get("status")).append(':').append(response.get("mimeType"));
-                                            }
-                                            else if (method.equals("Page.frameRequestedNavigation")) navigationEvidence.append(" navigationReason=").append(parameters.get("reason"));
-                                        }
-                                    }
-                                }
-                                ws.request(1); return null;
-                            }
-                        }).get(10, TimeUnit.SECONDS);
-                call("Runtime.enable", new JsonObject());
-                call("Page.enable", new JsonObject());
-                call("Network.enable", new JsonObject());
-                call("Security.enable", new JsonObject());
-                call("WebAuthn.enable", JsonParser.parseString("{\"enableUI\":false}").getAsJsonObject());
-                JsonObject navigation = null;
-                for (int attempt = 0; attempt < 3; attempt++) {
-                    navigation = call("Page.navigate", JsonParser.parseString("{\"url\":\"https://auth.garden.internal/\"}").getAsJsonObject());
-                    if (!navigation.has("errorText") || !navigation.get("errorText").getAsString().equals("net::ERR_ABORTED")) break;
-                    Thread.sleep(300);
-                }
-                if (navigation.has("errorText")) throw new IOException("Browser HTTPS navigation failed: " + navigation.get("errorText").getAsString()
-                        + "; download=" + navigation.get("isDownload") + "; " + navigationEvidence
-                        + "; document=" + evaluate("({origin:location.origin,ready:document.readyState,title:document.title})"));
-                deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
-                while (!evaluate("location.origin === 'https://auth.garden.internal' && document.readyState === 'complete'").getAsBoolean()) {
-                    if (System.nanoTime() > deadline) throw new IOException("Browser could not load verified gateway HTTPS: " + evaluate("({origin:location.origin,ready:document.readyState})"));
-                    Thread.sleep(100);
-                }
-                evaluate(Files.readString(Path.of("scripts/incus-smoke/passkey-probe.js")));
-            }
+            initializeBrowser(port);
         } catch (Exception error) { close(); throw error; }
+    }
+    private static void initializeTrustDatabase(IncusCommands incus, Path nss) throws Exception {
+        if (Files.exists(nss.resolve("cert9.db"))) return;
+        var result = incus.command(Duration.ofSeconds(15), List.of("certutil", "-N", "--empty-password", "-d", "sql:" + nss));
+        if (result.status() != 0) throw new IOException("Cannot initialize browser CA trust");
+    }
+    private void initializeBrowser(int port) throws Exception {
+        var page = blankPage(port);
+        socket = http.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(5))
+                .buildAsync(URI.create(page.get("webSocketDebuggerUrl").getAsString()), new WebSocket.Listener() {
+                    private final StringBuilder text = new StringBuilder();
+                    public void onOpen(WebSocket ws) { ws.request(1); }
+                    public CompletionStage<?> onText(WebSocket ws, CharSequence part, boolean last) {
+                        text.append(part);
+                        if (!last) { ws.request(1); return null; }
+                        var message = JsonParser.parseString(text.toString()).getAsJsonObject();
+                        text.setLength(0);
+                        receive(message);
+                        ws.request(1);
+                        return null;
+                    }
+                }).get(10, TimeUnit.SECONDS);
+        call("Runtime.enable", new JsonObject());
+        call("Page.enable", new JsonObject());
+        call("Network.enable", new JsonObject());
+        call("Security.enable", new JsonObject());
+        call("WebAuthn.enable", JsonParser.parseString("{\"enableUI\":false}").getAsJsonObject());
+        JsonObject navigation = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            navigation = call("Page.navigate", JsonParser.parseString("{\"url\":\"https://auth.garden.internal/\"}").getAsJsonObject());
+            if (!navigation.has("errorText") || !navigation.get("errorText").getAsString().equals("net::ERR_ABORTED")) break;
+            Thread.sleep(300);
+        }
+        if (navigation.has("errorText")) throw new IOException("Browser HTTPS navigation failed: " + navigation.get("errorText").getAsString()
+                + "; download=" + navigation.get("isDownload") + "; " + navigationEvidence
+                + "; document=" + evaluate("({origin:location.origin,ready:document.readyState,title:document.title})"));
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (!evaluate("location.origin === 'https://auth.garden.internal' && document.readyState === 'complete'").getAsBoolean()) {
+            if (System.nanoTime() > deadline) throw new IOException("Browser could not load verified gateway HTTPS: " + evaluate("({origin:location.origin,ready:document.readyState})"));
+            Thread.sleep(100);
+        }
+        evaluate(Files.readString(Path.of("scripts/incus-smoke/passkey-probe.js")));
+    }
+    private JsonObject blankPage(int port) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (true) {
+            var reply = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/json/list"))
+                    .timeout(Duration.ofSeconds(5)).build(), HttpResponse.BodyHandlers.ofString());
+            var page = findBlankPage(reply.body());
+            if (page != null) return page;
+            if (System.nanoTime() > deadline) throw new IOException("Browser did not expose its blank page target");
+            Thread.sleep(100);
+        }
+    }
+    private static JsonObject findBlankPage(String body) {
+        for (var entry : JsonParser.parseString(body).getAsJsonArray()) {
+            var target = entry.getAsJsonObject();
+            if (!target.get("type").getAsString().equals("page") || !target.get("url").getAsString().equals("about:blank")) continue;
+            return target;
+        }
+        return null;
+    }
+    private void receive(JsonObject message) {
+        if (message.has("id")) { responses.add(message); return; }
+        if (!message.has("method")) return;
+        String method = message.get("method").getAsString();
+        var parameters = message.getAsJsonObject("params");
+        if (method.equals("Network.requestWillBeSent")) rememberAuthorizationCode(parameters);
+        if (navigationEvidence.length() >= 3000) return;
+        switch (method) {
+            case "Network.loadingFailed" -> navigationEvidence.append(" loadingFailed=").append(parameters.get("errorText")).append("; blocked=").append(parameters.get("blockedReason")).append("; canceled=").append(parameters.get("canceled"));
+            case "Security.certificateError" -> navigationEvidence.append(" certificateError=").append(parameters.get("errorType"));
+            case "Network.responseReceived" -> recordResponse(parameters);
+            case "Page.frameRequestedNavigation" -> navigationEvidence.append(" navigationReason=").append(parameters.get("reason"));
+            default -> { }
+        }
+    }
+    private void rememberAuthorizationCode(JsonObject parameters) {
+        var uri = URI.create(parameters.getAsJsonObject("request").get("url").getAsString());
+        if (uri.getHost() == null || !uri.getHost().endsWith(".garden.internal")) return;
+        Map<String, String> query;
+        try { query = OidcFixture.query(uri); }
+        catch (IOException malformedQuery) { navigationEvidence.append(" malformedQuery"); return; }
+        String code = query.get("code");
+        if (code != null) privateValues.add(code);
+    }
+    private void recordResponse(JsonObject parameters) {
+        var response = parameters.getAsJsonObject("response");
+        navigationEvidence.append(" response=").append(parameters.get("type")).append(':').append(response.get("status")).append(':').append(response.get("mimeType"));
     }
     JsonElement evaluate(String expression) throws Exception {
         var parameters = new JsonObject(); parameters.addProperty("expression", expression);
@@ -270,11 +284,13 @@ final class PasskeyBrowser implements AutoCloseable {
     public void close() {
         if (socket != null) socket.abort();
         if (http != null) http.shutdownNow();
-        if (process != null && process.isAlive()) {
-            process.descendants().forEach(ProcessHandle::destroy);
-            process.destroy();
-            try { if (!process.waitFor(5, TimeUnit.SECONDS)) { process.destroyForcibly(); process.waitFor(5, TimeUnit.SECONDS); } }
-            catch (InterruptedException error) { process.destroyForcibly(); Thread.currentThread().interrupt(); }
-        }
+        if (process == null || !process.isAlive()) return;
+        process.descendants().forEach(ProcessHandle::destroy);
+        process.destroy();
+        try {
+            if (process.waitFor(5, TimeUnit.SECONDS)) return;
+            process.destroyForcibly();
+            process.waitFor(5, TimeUnit.SECONDS);
+        } catch (InterruptedException error) { process.destroyForcibly(); Thread.currentThread().interrupt(); }
     }
 }

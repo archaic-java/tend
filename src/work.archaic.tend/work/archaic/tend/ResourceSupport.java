@@ -1,7 +1,6 @@
 package work.archaic.tend;
 
 import com.google.gson.*;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
@@ -17,7 +16,7 @@ final class ResourceSupport {
     static final String ACTIVATED = "user.tend.activated";
     static final String IMAGE = "user.tend.image";
 
-    JsonObject managedConfig(IncusClient.Resource current, Map<String, String> desired) throws IOException {
+    JsonObject managedConfig(IncusClient.Resource current, Map<String, String> desired) throws ReconciliationException {
         checkOwner(current);
         JsonObject config = current == null ? new JsonObject() : current.value().getAsJsonObject("config").deepCopy();
         for (String key : tracked(config, KEYS)) config.remove(key);
@@ -26,11 +25,11 @@ final class ResourceSupport {
         config.addProperty(OWNER, owner); config.addProperty(KEYS, keys.toString());
         return config;
     }
-    void checkOwner(IncusClient.Resource resource) throws IOException {
+    void checkOwner(IncusClient.Resource resource) throws ReconciliationException {
         if (resource != null && !owner.equals(value(resource.value().getAsJsonObject("config"), OWNER)))
             throw new ReconciliationException("Existing resource is not owned by this controller");
     }
-    static List<String> tracked(JsonObject config, String key) throws IOException {
+    static List<String> tracked(JsonObject config, String key) throws ReconciliationException {
         String text = value(config, key);
         if (text.isEmpty()) return List.of();
         try { return JsonParser.parseString(text).getAsJsonArray().asList().stream().map(JsonElement::getAsString).toList(); }

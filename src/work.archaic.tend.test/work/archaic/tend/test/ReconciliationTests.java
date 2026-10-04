@@ -8,6 +8,8 @@ import java.time.Duration;
 import java.util.*;
 import work.archaic.service.test.v02.*;
 import work.archaic.tend.Reconciler;
+import work.archaic.tend.ReconciliationException;
+import work.archaic.tend.incus.IncusException;
 import work.archaic.tend.incus.IncusClient;
 import work.archaic.tend.secrets.SecretStore;
 import work.archaic.tend.state.StateReader;
@@ -94,7 +96,7 @@ record FileActivationFailure() implements TestCase {
             f.mock.files.put(Garden.VOLUME + "/service.conf", new IncusMock.StoredFile("drift".getBytes(), "1000", "1000", "0644"));
             f.mock.failStart = true;
             boolean rejected = false;
-            try { f.engine.reconcile(f.desired); } catch (IOException e) { rejected = true; }
+            try { f.engine.reconcile(f.desired); } catch (IncusException e) { rejected = true; }
             assert rejected : "Failed activation after file repair must escape";
             assert !f.mock.resources.get(Garden.INSTANCE).getAsJsonObject("config").has("user.tend.activated") : "Repair must durably invalidate the old activation marker";
             var fresh = new Reconciler(f.client, new SecretStore(f.garden.state.resolve("secrets")), "garden", "test-controller");
@@ -123,7 +125,7 @@ record EtagConflict() implements TestCase {
             f.deploy();
             f.mock.drift(Garden.INSTANCE, "environment.DEMO", "drifted"); f.mock.conflict = true;
             boolean rejected = false;
-            try { f.engine.reconcile(f.desired); } catch (IOException e) { rejected = true; }
+            try { f.engine.reconcile(f.desired); } catch (IncusException e) { rejected = true; }
             assert rejected : "ETag conflict must not be treated as success";
             f.engine.reconcile(f.desired);
             assert f.mock.running.get(Garden.INSTANCE) : "A later pass must recover after conditional update conflict";
@@ -172,7 +174,7 @@ record ImageChange() implements TestCase {
             int count = f.mock.mutations;
             f.garden.commit(Garden.xml().replace(Garden.IMAGE, "b".repeat(64)), "changed");
             boolean rejected = false;
-            try { f.engine.reconcile(f.reader.read(f.garden.git.fetchMain(), "incus.xml")); } catch (IOException e) { rejected = true; }
+            try { f.engine.reconcile(f.reader.read(f.garden.git.fetchMain(), "incus.xml")); } catch (ReconciliationException e) { rejected = true; }
             assert rejected && f.mock.mutations == count : "Unsupported replacement must fail before changing mounted files";
 
         }
@@ -195,7 +197,7 @@ record PartialFailure() implements TestCase {
         try (var f = new DeploymentFixture()) {
             f.mock.failurePath = "/1.0/instances";
             boolean failed = false;
-            try { f.deploy(); } catch (IOException e) { failed = true; trail.note(e.getMessage()); }
+            try { f.deploy(); } catch (IncusException e) { failed = true; trail.note(e.getMessage()); }
             assert failed : "Injected failure must escape reconciliation";
             f.deploy();
             assert f.mock.running.get(Garden.INSTANCE) : "Next pass must recover the incomplete deployment";
@@ -207,7 +209,7 @@ record StartFailure() implements TestCase {
         try (var f = new DeploymentFixture()) {
             f.mock.failStart = true;
             boolean failed = false;
-            try { f.deploy(); } catch (IOException e) { failed = true; trail.note(e.getMessage()); }
+            try { f.deploy(); } catch (IncusException e) { failed = true; trail.note(e.getMessage()); }
             assert failed : "Injected failure must escape reconciliation";
             assert !f.mock.resources.get(Garden.INSTANCE).getAsJsonObject("config").has("user.tend.activated") : "Failed start must leave activation pending";
             f.deploy();
@@ -232,7 +234,7 @@ record OperationTimeout() implements TestCase {
         try (var f = new DeploymentFixture(Duration.ofMillis(200))) {
             f.mock.stall = true;
             boolean failed = false;
-            try { f.deploy(); } catch (IOException e) { failed = true; trail.note(e.getMessage()); }
+            try { f.deploy(); } catch (IncusException e) { failed = true; trail.note(e.getMessage()); }
             assert failed : "Injected failure must escape reconciliation";
         }
     }
@@ -243,7 +245,7 @@ record Unmanaged() implements TestCase {
             JsonObject existing = new JsonObject(); existing.add("config", new JsonObject());
             f.mock.seed(Garden.VOLUME, existing);
             boolean rejected = false;
-            try { f.deploy(); } catch (IOException e) { rejected = true; }
+            try { f.deploy(); } catch (ReconciliationException e) { rejected = true; }
             assert rejected : "Unowned resources must not be adopted implicitly";
             assert f.mock.mutations == 0 : "Ownership preflight must precede mutation";
         }
@@ -254,7 +256,7 @@ record Scope() implements TestCase {
         try (var f = new DeploymentFixture()) {
             var other = new Reconciler(f.client, f.store, "other", "test-controller");
             boolean rejected = false;
-            try { other.reconcile(f.desired); } catch (IOException e) { rejected = true; }
+            try { other.reconcile(f.desired); } catch (ReconciliationException e) { rejected = true; }
             assert rejected && f.mock.mutations == 0 : "Desired project cannot escape controller scope";
         }
     }
@@ -268,7 +270,7 @@ record FileMetadataRepairRecovery() implements TestCase {
             f.mock.files.put(path, new IncusMock.StoredFile("version=one\n".getBytes(), "0", "0", "0600"));
             f.mock.failFileWrite = true;
             boolean failed = false;
-            try { f.engine.reconcile(f.desired); } catch (IOException expected) { failed = true; }
+            try { f.engine.reconcile(f.desired); } catch (IncusException expected) { failed = true; }
             assert failed : "Failed recreation must remain a failed reconciliation";
             assert !f.mock.files.containsKey(path) : "Fixture must exercise interruption after deletion";
             assert !f.mock.resources.get(Garden.INSTANCE).getAsJsonObject("config").has("user.tend.activated") : "Missing managed file must leave its consumer activation pending";
