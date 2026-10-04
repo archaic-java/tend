@@ -234,7 +234,8 @@ record OperationTimeout() implements TestCase {
         try (var f = new DeploymentFixture(Duration.ofMillis(200))) {
             f.mock.stall = true;
             boolean failed = false;
-            try { f.deploy(); } catch (IncusException e) { failed = true; trail.note(e.getMessage()); }
+            // The same bound limits HTTP requests and operation waits; either timeout may win.
+            try { f.deploy(); } catch (IncusException | java.net.http.HttpTimeoutException e) { failed = true; trail.note(e.getMessage()); }
             assert failed : "Injected failure must escape reconciliation";
         }
     }
