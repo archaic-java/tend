@@ -3,7 +3,11 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -28,6 +32,7 @@ jobs:
       - run: docker build -t tend:test .
       - run: docker run --rm tend:test --help
   incus-smoke:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'incus-integration'))
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:

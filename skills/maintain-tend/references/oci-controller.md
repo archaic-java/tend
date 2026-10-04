@@ -127,7 +127,7 @@ The explicit empty-profile, unprivileged OCI instance uses the selected root poo
 private bridge, autostart/autorestart, UID/GID 1000, cwd `/app` and this complete native command:
 
 ```text
-java @/etc/tend-bootstrap/java.args @cmd/run @/etc/tend-bootstrap/controller.args
+java @/etc/tend-bootstrap/launch.args
 ```
 
 Incus `oci.entrypoint` replaces the full executable/argument vector; there is no separate Incus
@@ -201,3 +201,10 @@ bytes, console and TLS store passwords are inspected privately and excluded from
 Run the full integration job once for a coherent final change; rerun only failures or changed
 evidence. See [integration reproduction](incus-smoke.md) for exact steps. CI's disposable dir
 pool and synthetic trust/Git do not replace IncusOS/ZFS, public Git/DNS or host-reboot acceptance.
+
+The bootstrap command combines `java.args`, the reviewed `cmd/run` and `controller.args` into
+one private `launch.args`, delivered with UID/GID 1000 and mode 0400. This ordering is required:
+the JDK stops expanding argument-file references after the module main target, so appending
+`@controller.args` after `@cmd/run` passes that filename literally to Tend. Reuse preserves the
+complete launch file along with the original private inputs; changing launcher configuration
+requires a stopped operator bootstrap update, not a controller-generated secret change.
