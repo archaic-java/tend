@@ -11,7 +11,7 @@ sudo incus image import "$fixture/artifact/metadata.tar.gz" "$fixture/artifact/r
     --alias tend-ci-controller-oci
 sudo incus image info tend-ci-controller-oci >out/incus-smoke/controller-image.txt
 sed -n 's/^Fingerprint: //p' out/incus-smoke/controller-image.txt >out/incus-smoke/controller-fingerprint.txt
-sudo cp "$fixture/artifact/provenance.json" out/incus-smoke/controller-provenance.json
+sudo cat "$fixture/artifact/provenance.json" >out/incus-smoke/controller-provenance.json
 # A dedicated project tests restricted controller trust and avoids all other fixture resources.
 sudo incus project create tend-ci-oci -c features.images=false -c features.networks=false \
     -c features.profiles=true -c features.storage.volumes=true

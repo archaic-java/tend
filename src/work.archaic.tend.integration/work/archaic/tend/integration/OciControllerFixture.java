@@ -43,6 +43,8 @@ final class OciControllerFixture {
         require("storage", "volume", "create", "tend-ci-pool", GIT,
                 "security.shifted=true", "initial.uid=1000", "initial.gid=1000", "initial.mode=0700",
                 "user.tend.bootstrap=" + PROJECT);
+        require("storage", "volume", "file", "create", "tend-ci-pool", GIT + "/remote.git",
+                "--type=directory", "--uid=1000", "--gid=1000", "--mode=0700");
         copyGit();
         attachGit();
     }
