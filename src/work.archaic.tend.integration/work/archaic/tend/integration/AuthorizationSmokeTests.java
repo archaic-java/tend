@@ -293,6 +293,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 browser.acceptConsent(GrafanaFixture.CLIENT, GrafanaFixture.ORIGIN);
                 user = browser.applicationUser();
                 assert user.get("status").getAsInt() == 401 : "Grafana must reject a provider-authenticated user outside its allowed groups";
+                grafanaStarted = garden.started(GrafanaFixture.INSTANCE);
                 garden.source("grafana.ini", grafana.configuration("admins observers"));
                 String strictRevision = garden.commitXml(grafana.xml(), "Exercise strict role rejection independently of group admission");
                 garden.reconcile(); grafana.dns(); grafana.ready();
