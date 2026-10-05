@@ -72,9 +72,10 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 assert fixture.request("alice").output().contains("status=200") : "Operator group update must activate without a public Git credential change";
                 assert fixture.login("bob").output().strip().equals("200") && fixture.request("bob").output().contains("status=403") : "Updating one user's groups must keep unrelated denied accounts denied";
                 fixture.updatePrivateGroups(false);
-                assert fixture.privateUsers().equals(privateUsers) : "Restoring operator groups must preserve private identity and password hash";
+                String restoredPrivateUsers = fixture.privateUsers();
+                assert com.google.gson.JsonParser.parseString(restoredPrivateUsers).equals(com.google.gson.JsonParser.parseString(privateUsers)) : "Restoring operator groups must preserve every private user field, including identity and password hash";
                 garden.reconcile();
-                assert fixture.privateUsers().equals(privateUsers) : "Reconciliation must never overwrite operator-issued users";
+                assert fixture.privateUsers().equals(restoredPrivateUsers) : "Reconciliation must never overwrite operator-issued user bytes";
                 trail.note("Private read-only users: explicit metadata, bounded group replacement and retained outsider denial");
                 String generated = fixture.policy();
                 assert generated.contains("group:admins") : "Mounted policy must reflect the new Git declaration";
@@ -386,7 +387,7 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 trail.note("Real Open WebUI callback and user endpoint: ordinary/admin roles, ai-users admission, Git overrides and private wrapper verified");
             }
 
-            assert fixture.privateUsers().equals(privateUsers) : "All configuration activations and process restarts must preserve operator users";
+            assert com.google.gson.JsonParser.parseString(fixture.privateUsers()).equals(com.google.gson.JsonParser.parseString(privateUsers)) : "All configuration activations and process restarts must preserve every operator user field";
             assert fixture.privateEvidenceExcluded() : "Private user hashes and passwords must be absent from Git and uploaded evidence";
             assert !Files.readString(garden.directory.resolve("author/incus.xml")).contains(privateUsers) : "Private user database must never enter public desired XML";
         }

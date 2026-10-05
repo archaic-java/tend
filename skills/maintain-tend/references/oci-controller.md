@@ -7,7 +7,7 @@ Only start watch after private inputs (#14) and the reviewed digital-garden stat
 
 ## Build an identifiable artifact
 
-On a Linux AMD64 workstation, install Docker, skopeo, umoci, Python 3, Git and GNU tar/timeout.
+On a Linux AMD64 workstation, install Docker, skopeo, umoci, Python 3, Git and GNU tar/timeout/chroot.
 Check out the reviewed Tend commit in a clean worktree (including no untracked inputs).
 Build/export requires workstation root to preserve filesystem ownership when unpacking OCI;
 this is not permission to execute anything on the IncusOS host.
@@ -22,7 +22,14 @@ to an OCI layout with skopeo, unpacks its native process configuration with umoc
 Incus split metadata/rootfs archives. `config.json` remains in metadata so Incus executes an
 actual OCI container, not a system-container wrapper. No registry publishing is needed.
 
-`provenance.json` records the Git revision, Docker image ID, OCI manifest digest and platform;
+The outer export directory stays private. Unpacking uses a local `022` umask so umoci's new
+filesystem root permits UID 1000 traversal; a `077` unpack would turn that directory into mode
+0700 before the rootfs archive is made. Before packaging, the exporter uses workstation `chroot`
+to run the image's Java launcher as UID/GID 1000 from `/app`. This checks the exported filesystem,
+which a successful Docker launch alone does not cover. It runs only `--help`, with no credentials.
+
+`provenance.json` records the Git revision, Docker image ID, OCI manifest digest, platform,
+filesystem-root mode and successful exported UID 1000 launch;
 `SHA256SUMS` covers the exported files. These identify the artifact actually built; moving
 base-image tags do not make builds byte reproducible. Keep the archives/provenance for review.
 Private inputs must remain outside the build context. Import through the authorized remote:
