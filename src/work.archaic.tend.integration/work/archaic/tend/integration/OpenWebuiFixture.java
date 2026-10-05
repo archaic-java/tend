@@ -132,17 +132,23 @@ final class OpenWebuiFixture {
                 """);
     }
     boolean leaked(Set<String> browserValues) throws Exception {
-        var values = new HashSet<>(browserValues);
-        values.add(privateCommands.incus("exec", INSTANCE, "--", "cat", "/etc/tend-webui-client/value").strip());
-        values.add(privateCommands.incus("exec", INSTANCE, "--", "cat", "/etc/tend-webui-session/value").strip());
+        var values = new LinkedHashMap<String, String>();
+        for (String value : browserValues) values.put(value, "browser-credential");
+        values.put(privateCommands.incus("exec", INSTANCE, "--", "cat", "/etc/tend-webui-client/value").strip(), "oauth-client-secret");
+        values.put(privateCommands.incus("exec", INSTANCE, "--", "cat", "/etc/tend-webui-session/value").strip(), "session-key");
         String console = privateCommands.incus("console", INSTANCE, "--show-log");
-        for (String value : values) if (value.length() >= 16 && console.contains(value)) return true;
+        for (var entry : values.entrySet()) if (entry.getKey().length() >= 16 && console.contains(entry.getKey())) return privacyFailure("console", entry.getValue());
         try (var files = Files.walk(Path.of("out/incus-smoke"))) {
             for (Path file : files.filter(Files::isRegularFile).toList()) {
                 String text = new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8);
-                for (String value : values) if (value.length() >= 16 && text.contains(value)) return true;
+                for (var entry : values.entrySet()) if (entry.getKey().length() >= 16 && text.contains(entry.getKey())) return privacyFailure("uploaded-evidence", entry.getValue());
             }
         }
         return false;
+    }
+    private boolean privacyFailure(String source, String kind) throws IOException {
+        // Fixed classifications only; never emit private bytes, hashes, excerpts or causes.
+        Files.writeString(Path.of("out/incus-smoke/webui-privacy-check.txt"), "source=" + source + "\nkind=" + kind + "\n");
+        return true;
     }
 }

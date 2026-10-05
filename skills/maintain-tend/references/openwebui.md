@@ -14,6 +14,13 @@ the child process, clears all four trusted-header authentication variables, and 
 upstream startup script with access logging disabled so callback query codes are not logged. Incus configuration contains only file paths and public settings.
 Use an explicit issuer CA file; never disable TLS verification.
 
+The wrapper also clears `AUDIT_UVICORN_LOGGER_NAMES` and fixes `AUDIT_LOG_LEVEL=NONE` and
+`LOGURU_DIAGNOSE=false`. In the pinned upstream `utils/logger.py:start_logger`, the default
+audit logger list reattaches a handler to `uvicorn.access` even with audit logging disabled,
+undoing Uvicorn's `--no-access-log`. The empty list prevents callback query codes from reaching
+the console while ordinary application warnings remain available. Both this example and the
+pinned garden asset must carry the same settings.
+
 The confidential Authelia client uses an exact `/oauth/oidc/callback` redirect, S256 PKCE,
 `client_secret_basic`, and signed `openid profile email groups` claims. **Its issuer policy
 must require `ai-users`**, including for accounts with `admins`. In v0.11.4, Open WebUI's
