@@ -34,7 +34,7 @@ chmod 0644 "$jar"
 jar --describe-module --file "$jar" --release 9
 
 # Public deployment recipe is an integration/offline fixture, pinned independently of modules.
-garden_revision=f623686683d0ddf8b9ff1306bd12b651bf38adda
+garden_revision=22fc2236413849170b1afbfb3f7640fe666f51e2
 if [ ! -d ../digital-garden/.git ]; then
     git clone https://github.com/mitschwimmer/digital-garden.git ../digital-garden
     git -C ../digital-garden checkout --detach "$garden_revision"
