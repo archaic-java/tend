@@ -9,7 +9,7 @@ import work.archaic.tend.state.DesiredState.*;
 /** Lowers application requirements into explicit Incus volumes, disks and network ACLs. */
 public final class ResourceCompiler {
     public record Acl(String name, String network, JsonArray egress) {}
-    public record Deployment(String project, List<Secret> secrets, List<Volume> volumes, List<Instance> instances, List<Acl> acls) {}
+    public record Deployment(String project, List<Secret> secrets, List<Volume> volumes, List<Instance> instances, List<Acl> acls, List<Volume> privateVolumes) {}
     public Deployment compile(DesiredState state) throws StateException {
         validateSecrets(state.secrets());
         var instances = new LinkedHashMap<String, Instance>();
@@ -17,7 +17,12 @@ public final class ResourceCompiler {
         for (var volume : state.volumes())
             if (!volume.files().isEmpty() && !"true".equals(volume.config().get("security.shifted")))
                 throw new StateException("Managed file volumes require explicit security.shifted=true");
-        var volumes = new ArrayList<>(state.volumes());
+        var privateVolumes = state.volumes().stream().filter(v -> v.config().containsKey("user.tend.private")).toList();
+        for (var volume : privateVolumes) {
+            if (!volume.files().isEmpty() || !volume.config().keySet().equals(Set.of("user.tend.private", "user.tend.private.kind", "security.shifted", "initial.uid", "initial.gid", "initial.mode")))
+                throw new StateException("Operator private volumes declare delivery metadata only; files and Tend ownership are forbidden");
+        }
+        var volumes = new ArrayList<>(state.volumes().stream().filter(v -> !v.config().containsKey("user.tend.private")).toList());
         for (var instance : state.instances()) instances.put(instance.name(), mounts(instance, state, volumes));
         gateway(state, instances, volumes);
         var acls = new ArrayList<Acl>();
@@ -41,7 +46,7 @@ public final class ResourceCompiler {
             instances.put(instance.name(), copy(instance, devices));
             acls.add(new Acl(name, nic.get("network"), rules));
         }
-        return new Deployment(state.project(), state.secrets(), List.copyOf(volumes), List.copyOf(instances.values()), List.copyOf(acls));
+        return new Deployment(state.project(), state.secrets(), List.copyOf(volumes), List.copyOf(instances.values()), List.copyOf(acls), privateVolumes);
     }
     private static void validateSecrets(List<Secret> secrets) throws StateException {
         Map<String, Secret> names = new HashMap<>();
@@ -98,6 +103,7 @@ public final class ResourceCompiler {
         if (!Arrays.asList(paths.split(",")).getLast().equals(policyFile))
             throw new StateException("Authelia must load generated access-control.json last via X_AUTHELIA_CONFIG");
         StringBuilder caddy = new StringBuilder();
+        if (!binding.metricsDevice().isEmpty()) renderMetrics(caddy, proxy, binding.metricsDevice());
         JsonArray accessRules = new JsonArray();
         Set<String> hosts = new HashSet<>();
         for (var ingress : state.ingresses().stream().sorted(Comparator.comparing(Ingress::host)).toList()) {
@@ -117,10 +123,22 @@ public final class ResourceCompiler {
         instances.put(authorization.name(), generated(authorization, volumes, "authorization", binding.pool(), binding.authorizationPath(), "access-control.json", document.toString(), binding.authorizationUid(), binding.authorizationGid()));
         instances.put(proxy.name(), generated(proxy, volumes, "ingress", binding.pool(), binding.path(), "Caddyfile", caddy.toString(), binding.uid(), binding.gid()));
     }
+    private static void renderMetrics(StringBuilder caddy, Instance proxy, String deviceName) throws StateException {
+        var nic = device(proxy, deviceName);
+        if (!"nic".equals(nic.get("type")) || !nic.containsKey("network") || nic.containsKey("nictype") || nic.containsKey("parent"))
+            throw new StateException("Gateway metrics requires its explicit private managed network NIC");
+        String address = address(proxy, deviceName);
+        String[] octets = address.split("\\.");
+        int first = Integer.parseInt(octets[0]), second = Integer.parseInt(octets[1]);
+        boolean privateAddress = first == 10 || first == 172 && second >= 16 && second <= 31 || first == 192 && second == 168;
+        if (!privateAddress) throw new StateException("Gateway metrics requires an RFC1918 address");
+        caddy.append("{\n    metrics\n}\n\nhttp://").append(address).append(":9180 {\n    bind ").append(address)
+                .append("\n    metrics /metrics\n}\n\n");
+    }
     private static void renderRoute(StringBuilder caddy, Ingress ingress, String backend, String authorization, int port) {
         caddy.append(ingress.host()).append(" {\n    route {\n");
         // Untrusted client identity headers must not survive a public or protected route.
-        caddy.append("        request_header -Remote-User\n        request_header -Remote-Groups\n        request_header -Remote-Email\n        request_header -Remote-Name\n");
+        caddy.append("        request_header -Remote-User\n        request_header -Remote-Groups\n        request_header -Remote-Email\n        request_header -Remote-Name\n        request_header -X-Forwarded-User\n        request_header -X-Forwarded-Email\n        request_header -X-Forwarded-Groups\n");
         if (!ingress.publicAccess()) renderAuthorization(caddy, authorization, port);
         caddy.append("        reverse_proxy ").append(backend).append(':').append(ingress.port()).append("\n    }\n}\n");
     }

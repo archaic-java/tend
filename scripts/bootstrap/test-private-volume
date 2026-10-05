@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Offline CLI safety scenarios with the same private API contracts as operator delivery."""
+import json, os, pathlib, subprocess, tempfile
+script = pathlib.Path(__file__).with_name('private-volume').resolve()
+with tempfile.TemporaryDirectory(prefix='tend-private-test-') as temporary:
+    root = pathlib.Path(temporary)
+    inputs = root/'inputs'; inputs.mkdir(mode=0o700)
+    marker = '$argon2id$v=19$m=65536,t=3,p=4$c3ludGhldGlj$cHJpdmF0ZWlucHV0'
+    original = json.dumps({'users': {'operator':dict(displayname='Operator', password=marker,
+                        email='operator@example.invalid', groups=['admins','ai-users'])}})
+    userfile = inputs/'users.yml'; userfile.write_text(original); userfile.chmod(0o600)
+    fake = root/'incus'; calls = root/'calls'
+    fake.write_text('''#!/usr/bin/env python3
+import json,os,sys
+args=sys.argv[1:]; mode=os.environ['TEST_MODE']
+with open(os.environ['TEST_CALLS'],'a') as f: f.write(json.dumps(args)+'\\n')
+config={'user.tend.private':'operator','user.tend.private.kind':'users','security.shifted':'true','initial.uid':'1000','initial.gid':'1000','initial.mode':'0700'}
+if mode=='wrong-owner': config['user.tend.private']='other'
+if mode=='ambiguous': config['user.tend.owner']='operator'
+if args[:3]==['storage','volume','list']:
+    print(json.dumps([] if mode=='create' else [dict(name='users',type='custom',config=config,used_by=['/1.0/instances/auth?project=garden'])]))
+elif args[0]=='query':
+    running=mode=='running-controller' and 'watch?' in args[1] or mode=='running-consumer' and 'auth?' in args[1]
+    print(json.dumps(dict(status='Running' if running else 'Stopped',config={'user.tend.bootstrap':'operator'})))
+'''); fake.chmod(0o700)
+    env = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'], TEST_CALLS=str(calls))
+    def attempt(mode, observation):
+        calls.write_text('')
+        arguments = ['python3',str(script),mode,'users','remote','garden','pool','users','operator','1000',str(inputs)]
+        if mode == 'replace': arguments += ['watch']
+        result = subprocess.run(arguments, env=dict(env,TEST_MODE=observation),capture_output=True,text=True)
+        assert marker not in result.stdout+result.stderr, 'Private parser/provider output must never expose hashes'
+        observed = [json.loads(s) for s in calls.read_text().splitlines()]
+        writes = [c for c in observed if c[:3]==['storage','volume','create'] or c[:3]==['storage','volume','file']]
+        return result, observed, writes
+    result, _, writes = attempt('create','create')
+    assert result.returncode==0 and len(writes)==2, 'Fresh delivery must create one operator volume and one private file'
+    assert '--mode=0400' in writes[-1] and '--uid=1000' in writes[-1], 'Delivery metadata must be explicit'
+    result, _, writes = attempt('replace','existing')
+    assert result.returncode==0 and len(writes)==2 and writes[0][3]=='delete', 'Stopped replacement must recreate metadata and then write privately'
+    for reason in ['existing','wrong-owner','ambiguous','running-controller','running-consumer']:
+        mode = 'create' if reason=='existing' else 'replace'
+        result, _, writes = attempt(mode,reason)
+        assert result.returncode!=0 and not writes, 'Collision, ambiguous ownership or running writers must reject before mutation'
+    for bad in ['{malformed-private-hash', '{"users":{},"users":{}}', original.replace('argon2id','plaintext')]:
+        userfile.write_text(bad)
+        result, observed, _ = attempt('create','create')
+        assert result.returncode!=0 and not observed, 'Malformed/duplicate/plaintext users must fail before API access'
+    userfile.write_text(original); userfile.chmod(0o644)
+    result, observed, _ = attempt('create','create')
+    assert result.returncode!=0 and not observed, 'Shared private inputs must fail before API access'
+    userfile.chmod(0o600); extra=inputs/'unexpected'; extra.write_text('ambiguous-private-input')
+    result, observed, _ = attempt('create','create')
+    assert result.returncode!=0 and not observed, 'Ambiguous extra files must fail before API access'
+    extra.unlink(); userfile.unlink()
+    result, observed, _ = attempt('create','create')
+    assert result.returncode!=0 and not observed, 'Missing users must fail before API access'
+    metrics = root/'metrics'; metrics.mkdir(mode=0o700)
+    for name in ['client','controller']:
+        result = subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1',
+            '-subj','/CN='+name,'-keyout',str(metrics/(name+'.key')),'-out',str(metrics/(name+'.crt'))],capture_output=True)
+        assert result.returncode==0, 'Synthetic certificate fixture must be valid'
+    (metrics/'controller.key').unlink()
+    (metrics/'server.crt').write_bytes((metrics/'controller.crt').read_bytes())
+    for file in metrics.iterdir(): file.chmod(0o600)
+    def deliver_metrics():
+        calls.write_text('')
+        result = subprocess.run(['python3',str(script),'create','metrics','remote','garden','pool','metrics','operator','65534',str(metrics)],
+            env=dict(env,TEST_MODE='create'),capture_output=True,text=True)
+        return result, calls.read_text()
+    result, observed = deliver_metrics()
+    assert result.returncode==0 and '--uid=65534' in observed, 'Distinct matching metrics credential must deliver as its application UID'
+    controller = (metrics/'controller.crt').read_bytes()
+    (metrics/'controller.crt').write_bytes((metrics/'client.crt').read_bytes())
+    result, observed = deliver_metrics()
+    assert result.returncode!=0 and not observed, 'Metrics must never reuse the controller certificate'
+    (metrics/'controller.crt').write_bytes(controller)
+    # A valid unrelated private key tests mismatch instead of a parser failure.
+    subprocess.run(['openssl','genpkey','-algorithm','RSA','-pkeyopt','rsa_keygen_bits:2048','-out',str(metrics/'client.key')],check=True,capture_output=True)
+    result, observed = deliver_metrics()
+    assert result.returncode!=0 and not observed, 'Mismatched metrics certificate/key must fail before API access'
+    print('Private delivery safety: 16 create/update, ownership, stopped-writer, malformed and privacy scenarios passed.')

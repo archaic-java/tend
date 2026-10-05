@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Dedicated metrics-only client trust; credential bytes stay outside uploaded evidence.
+set -euo pipefail
+[[ ${TEND_DISPOSABLE_RUNNER:-} == yes ]]
+umask 077
+image='prom/prometheus@sha256:69f5241418838263316593f7274a304b095c40bcf22e57272865da91bd60a8ac'
+printf '%s\n' "$image" >out/incus-smoke/prometheus-oci-image.txt
+timeout 180 sudo incus image copy "tend-ci-docker:$image" local: --alias tend-ci-prometheus
+sudo incus image info tend-ci-prometheus >out/incus-smoke/prometheus-image.txt
+sed -n 's/^Fingerprint: //p' out/incus-smoke/prometheus-image.txt >out/incus-smoke/prometheus-fingerprint.txt
+fixture=$(mktemp -d /tmp/tend-ci-metrics.XXXXXX)
+printf '%s\n' "$fixture" >out/incus-smoke/metrics-directory.txt
+mkdir "$fixture/valid" "$fixture/untrusted" "$fixture/wrong-server"
+for variant in valid untrusted; do
+    openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=tend-ci-metrics-$variant" \
+        -addext extendedKeyUsage=clientAuth -keyout "$fixture/$variant/client.key" -out "$fixture/$variant/client.crt" \
+        >"$fixture/$variant/openssl-private-output" 2>&1
+    rm "$fixture/$variant/openssl-private-output"
+done
+credentials=$(cat out/incus-smoke/credentials-directory.txt)
+for variant in valid untrusted; do
+    cp "$credentials/server.crt" "$fixture/$variant/server.crt"
+    cp "$credentials/client.crt" "$fixture/$variant/controller.crt"
+done
+cp "$fixture/valid/"* "$fixture/wrong-server/"
+cp "$fixture/untrusted/client.crt" "$fixture/wrong-server/server.crt"
+chmod 0600 "$fixture"/*/*
+openssl x509 -in "$fixture/valid/client.crt" -outform der | sha256sum | cut -d' ' -f1 >out/incus-smoke/metrics-fingerprint.txt
+sudo incus config trust add-certificate "$fixture/valid/client.crt" --name tend-ci-metrics --type metrics
+sudo python3 scripts/bootstrap/private-volume create metrics local default tend-ci-pool \
+    tend-ci-metrics-tls tend-ci-controller 65534 "$fixture/valid"

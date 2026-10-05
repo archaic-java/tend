@@ -15,6 +15,13 @@ The VM contains both OVN's central database/control plane and its local controll
 
 ## What it proves
 
+Offline and Docker verification run automatically. The expensive Incus job runs only on an
+explicit workflow dispatch or a PR carrying the `incus-integration` label. Apply that label once
+the coherent revision or combined stack is ready; subsequent changes to that labelled PR rerun
+it, so remove the label while iterating. Push-to-main verification does not repeat the disposable
+suite automatically. Per-ref concurrency cancels superseded attempts. For stacked review, retain
+one final full-suite run whose head contains every dependent change, then link that evidence.
+
 The OVN Minau case starts two containers on `tend-ci-ovn`, with static IPv4 addresses. The server
 exposes the same HTTP response on 8080 and 8081. A statically linked BusyBox binary from the runner
 provides both servers and the client probe; guest package installation is unnecessary.
@@ -36,7 +43,24 @@ isolates ACL attachment and filtering rather than guest recovery after NIC repla
 Probes use new TCP connections, bounded command timeouts and readiness polling. No ICMP/ping
 assumptions, public ingress, certificates or guest internet access are involved. Assertions are
 inline Java assertions run with `-ea`. This case proves environment provisioning and actual packet
-filtering; it does not prove OCI bootstrap, secret permissions, Caddy/Authelia startup or user authentication.
+filtering; the separate cases below cover controller bootstrap and application authentication.
+
+The controller case builds the reviewed Tend Docker revision, exports its OCI runtime bundle,
+and imports the split image through the operator procedure in
+[OCI controller bootstrap](oci-controller.md). It starts the actual UID 1000 Java `watch`
+process inside native Incus OCI execution, using a read-only private TLS/arguments volume,
+a retained state volume, and a separate read-only bare Git volume. A project-restricted
+client authenticates over verified HTTPS through the private bridge at `10.79.0.1`.
+The runner publishes commits; it never launches Tend to reconcile this case.
+
+The case checks application creation and changed-main activation, stable unchanged passes,
+stop/start and replacement with retained random/RSA identity and last-success. Missing Git,
+an unrelated trust anchor and revoked API authorization must fail within a bounded interval,
+preserve the previous success, and recover after repair. Missing Git must also leave deliberate
+application drift untouched, proving a failed fetch does not deploy cached main. Private state,
+console output and TLS store passwords are inspected privately and excluded from artifacts.
+Only image provenance, public configuration, mount/UID checks and redacted test notes are retained.
+These are disposable synthetic credentials; no production host is contacted.
 
 A separate reconciliation case runs the actual `once` CLI over HTTPS with an operator-authorized
 client certificate and a pinned server trust store. It authors XML and a configuration file in a
@@ -106,7 +130,7 @@ authenticators, biometrics, passkey synchronization or two-factor flows.
 Tend generates and mounts Authelia's session, storage and reset-password secrets under `/etc`;
 Alpine's boot-time `/run` tmpfs would hide disks mounted below that directory. Passwords, hashes,
 cookies, user databases and secret bytes are never uploaded; private fixture accounts are cached
-only in a disposable local image and login bodies reside in a private temporary directory.
+in an operator-owned read-only custom volume delivered by `scripts/bootstrap/private-volume`; login bodies reside in a private temporary directory. The application image contains no user records. The case verifies private metadata/read-only access, preserved bytes across reconciliation/restart, and bounded operator group updates with outsider denial. See [private input ownership](private-inputs.md).
 
 The authorization case then commits an OIDC configuration and generated RSA signing key,
 HMAC value and client-secret/hash declarations. Authelia loads the PEM and hash with its native
@@ -181,6 +205,20 @@ The cases use different resources and evidence directories so concurrent Minau e
 TLS keys, private Java arguments and controller state are outside the uploaded artifact. The test
 uses the normal JSSE client/trust stores and hostname verification; there is no TLS bypass.
 
+The native ingress case separately caches the upstream Caddy and Authelia OCI images documented
+in [native ingress](native-ingress.md), using ordinary private and second-interface test bridges.
+It checks their actual entrypoints/config list, privately delivered users, verified disposable TLS,
+HTTP and WebSocket authorization, forged identity removal, private-only Caddy metrics, changed
+policy activation and retained Caddy CA. It does not use the OpenRC wrappers. Public ACME
+issuance remains operator acceptance; the browser/OIDC cases above retain their independent scope.
+
+The same native case adds actual Prometheus v3.12.0 and a separate Grafana provisioning consumer.
+It checks live Prometheus/Caddy/Authelia/Grafana/Incus targets, dedicated metrics-only TLS and
+negative certificate/server-trust recovery, the idle llama model's non-autoload request, actual
+Grafana datasource/dashboard/query, no-op identity and historical TSDB data after restart.
+See [monitoring inputs and ownership](monitoring.md). The later llama case supplies actual model
+commissioning evidence; a down idle target is deliberately distinct from a failed live service job.
+
 ## Inputs and evidence
 
 - GitHub runner OS label: `ubuntu-24.04`, AMD64.
@@ -228,10 +266,10 @@ needs no repository secrets, external Incus credentials or published test images
 ## Reproduce on a disposable VM
 
 These scripts install packages, change host network services and create/delete fixed-name Incus
-resources in the default project. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
+resources in the default and `tend-ci-oci` projects. Run them only in a fresh Ubuntu 24.04 AMD64 test VM, not on an
 existing Incus host. The scripts require `TEND_DISPOSABLE_RUNNER=yes` as an explicit environment
 selection. The VM needs passwordless sudo, JDK 25, Git, curl, GPG, OpenSSL, Python 3, Docker, Google Chrome and working host internet access. Host loopback port 443 must be free. Nested KVM must be available and the additional Pi subnet
-`10.78.0.0/24` must not conflict with existing routes.
+`10.78.0.0/24`, controller bridge `10.79.0.0/24` and native second-interface bridge `10.80.0.0/24` must not conflict with existing routes.
 
 From Tend's repository root:
 
@@ -246,6 +284,9 @@ bash scripts/incus-smoke/prepare-authelia
 bash scripts/incus-smoke/prepare-grafana
 bash scripts/incus-smoke/prepare-pi
 bash scripts/incus-smoke/authenticate
+bash scripts/incus-smoke/prepare-controller
+bash scripts/incus-smoke/prepare-native-ingress
+bash scripts/incus-smoke/prepare-monitoring
 sudo apt-get install -y libnss3-tools
 google-chrome --version >out/incus-smoke/browser-version.txt
 echo '127.0.0.1 auth.garden.internal' | sudo tee -a /etc/hosts >/dev/null
@@ -263,3 +304,7 @@ must produce a failed CI job. Offline tests continue to use `java @cmd/test` ind
 - https://github.com/zabbly/incus
 - https://linuxcontainers.org/incus/docs/main/howto/network_ovn_setup/
 - https://linuxcontainers.org/incus/docs/main/howto/network_acls/
+
+The minimal Open WebUI consumer block reuses the authorization fixture and its native Authelia OCI issuer. See [Open WebUI](openwebui.md) for its digest, issuer admission gate and private wrapper. Raw OAuth application/issuer logs are never uploaded.
+
+The native monitoring case also exercises the explicitly controlled CPU llama protocol fixture. It proves API/model selection and idle monitoring, not llama binary/weights/ROCm. See [llama commissioning](llama.md) for the required hardware gate.

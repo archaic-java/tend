@@ -94,6 +94,11 @@ invalidate activation before writing. Each consumer has its own volume, avoiding
 assumptions. Old volumes are retained; garbage collection is outside this proof of concept.
 Declared Incus volumes and their root-level files remain available for the existing offline slice.
 
+Private operator inputs use a volume with `private-owner`, `private-kind` (`users`, `metrics` or
+`smtp`) and `private-uid` attributes, plus an ordinary read-only disk. These declarations contain
+metadata only and are excluded from Tend's managed volume/file reconciliation. Every referenced
+private volume is preflighted before mutation. See [private delivery and activation](private-inputs.md).
+
 ## Ingress
 
 ```xml
@@ -134,6 +139,11 @@ This authorization protects requests through Caddy. It does not prevent clients 
 IP directly. Network topology/firewall enforcement of that boundary needs its own validation.
 OIDC login in Grafana/Open WebUI is a distinct requirement: proxy authorization does not register
 OIDC clients or enforce their policies. Secret declarations can supply the matching raw/hash credentials.
+
+An optional gateway `<metrics device="eth1"/>` enables Caddy counters and `/metrics` on
+port 9180, explicitly bound to the gateway's declared private managed-network NIC and RFC1918
+address. This fixed listener is separate from public host routes. All routes also strip the three
+`X-Forwarded-User/Email/Groups` identity headers. See [upstream OCI startup and metrics](native-ingress.md).
 
 ## Egress
 

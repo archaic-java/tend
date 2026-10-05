@@ -40,6 +40,17 @@ Use this entry point for both human contributors and coding agents.
 | Change Incus protocol handling or mock behavior | [Mock fidelity](references/development.md#incus-mock-fidelity), [integration](references/incus-smoke.md) | IncusClient and IncusMock; offline failures/recovery, then affected real-host cases. |
 | Run or extend real-host verification | [Integration reproduction and evidence](references/incus-smoke.md), [development coverage](references/development.md#real-host-integration) | Separate integration module and scripts/incus-smoke; preserve diagnostics and cleanup. |
 | Bootstrap a reset IncusOS host | [Remote bootstrap](references/incusos-bootstrap.md), [manifest template](references/bootstrap-manifest.example.md) | Operator procedure only; validate actual network roles, image fingerprints, TLS and target storage before handing off to the controller. |
+| Build/import, install or replace the OCI controller | [OCI controller](references/oci-controller.md), [integration evidence](references/incus-smoke.md) | scripts/bootstrap and ControllerSmokeTests; retain state, private credentials and one writer; bootstrap is operator-owned. |
+
+| Provision/update private users, metrics TLS or SMTP | [Private inputs](references/private-inputs.md), [resource model](references/resource-model.md) | Operator scripts/bootstrap/private-volume; ownership preflight, offline safety and real authorization case. |
+
+| Configure upstream OCI ingress and private gateway metrics | [Native ingress](references/native-ingress.md), [resource model](references/resource-model.md#ingress) | Gateway lowering, NativeIngressSmokeTests and pinned cache inputs; verify private binding and HTTP/WebSocket decisions. |
+
+| Configure Prometheus scraping and Grafana provisioning | [Monitoring](references/monitoring.md), [private inputs](references/private-inputs.md) | Flat monitoring examples and the native integration case; verify dedicated TLS, datasource/dashboard API, actual data and retained TSDB. |
+
+| Configure Open WebUI OIDC admission and wrapper | [Open WebUI](references/openwebui.md), [private inputs](references/private-inputs.md) | Existing AuthorizationSmokeTests consumer block; issuer ai-users gate, actual user endpoint and Git-authoritative settings. |
+
+| Configure llama.cpp and commission AMD hardware | [Llama](references/llama.md), [remote bootstrap](references/incusos-bootstrap.md) | Device/preset offline projection, controlled CPU protocol and explicit operator GPU acceptance. |
 
 ## Complete the change
 

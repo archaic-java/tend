@@ -3,7 +3,11 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -19,6 +23,8 @@ jobs:
       - run: javac @cmd/compile
       - run: java @cmd/test
       - run: java @cmd/run --help
+      - run: python3 scripts/bootstrap/test-controller
+      - run: python3 scripts/bootstrap/test-private-volume
   oci:
     runs-on: ubuntu-latest
     steps:
@@ -26,6 +32,7 @@ jobs:
       - run: docker build -t tend:test .
       - run: docker run --rm tend:test --help
   incus-smoke:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'incus-integration'))
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -52,6 +59,14 @@ jobs:
         run: bash scripts/incus-smoke/prepare-pi
       - name: Authorize controller HTTPS client
         run: bash scripts/incus-smoke/authenticate
+      - name: Build and import the actual Tend OCI controller
+        run: bash scripts/incus-smoke/prepare-controller
+      - name: Cache upstream Caddy and Authelia OCI images
+        run: bash scripts/incus-smoke/prepare-native-ingress
+      - name: Cache Prometheus and enroll a separate metrics credential
+        run: bash scripts/incus-smoke/prepare-monitoring
+      - name: Cache pinned Open WebUI OCI image
+        run: bash scripts/incus-smoke/prepare-openwebui
       - name: Prepare browser passkey probe
         run: |
           sudo apt-get update

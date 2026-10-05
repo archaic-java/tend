@@ -46,8 +46,30 @@ public final class Reconciler {
     private void preflight(Deployment desired) throws IOException, InterruptedException {
         if (!desired.project().equals(project)) throw new ReconciliationException("Desired project differs from controller scope");
         for (var volume : desired.volumes()) resources.checkOwner(incus.get(IncusClient.volumePath(volume.pool(), volume.name())));
-        for (var instance : desired.instances()) preflightInstance(instance);
+        for (var volume : desired.privateVolumes()) {
+            var observed = incus.get(IncusClient.volumePath(volume.pool(), volume.name()));
+            if (observed == null) throw new ReconciliationException("Private volume is missing; operator bootstrap is required");
+            resources.checkPrivateVolume(observed, "true");
+            var config = observed.value().getAsJsonObject("config");
+            for (var entry : volume.config().entrySet())
+                if (!entry.getValue().equals(value(config, entry.getKey())))
+                    throw new ReconciliationException("Private volume delivery metadata differs from the declaration");
+        }
+        for (var instance : desired.instances()) {
+            preflightInstance(instance);
+            preflightExternalVolumes(instance, desired);
+        }
         policies.preflight(desired.acls());
+    }
+    private void preflightExternalVolumes(DesiredState.Instance instance, Deployment desired) throws IOException, InterruptedException {
+        for (var device : instance.devices().values()) {
+            if (!"disk".equals(device.get("type")) || !device.containsKey("pool") || !device.containsKey("source")) continue;
+            String pool = device.get("pool"), source = device.get("source");
+            if (desired.volumes().stream().anyMatch(v -> v.pool().equals(pool) && v.name().equals(source))) continue;
+            var observed = incus.get(IncusClient.volumePath(pool, source));
+            if (observed == null) throw new ReconciliationException("External custom volume is missing; bootstrap before reconciliation");
+            resources.checkPrivateVolume(observed, device.get("readonly"));
+        }
     }
     private void preflightInstance(DesiredState.Instance instance) throws IOException, InterruptedException {
         var observed = incus.get(instancePath(instance.name()));

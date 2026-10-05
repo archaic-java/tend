@@ -1,0 +1,26 @@
+<incus project="garden">
+  <configuration name="llama-models"><file path="/models.ini" source="models.ini"/></configuration>
+  <volume pool="pool" name="llama-cache"><config>
+    <entry key="security.shifted" value="true"/><entry key="initial.uid" value="1000"/>
+    <entry key="initial.gid" value="1000"/><entry key="initial.mode" value="0750"/>
+  </config></volume>
+  <!-- Offline example fingerprint; installation must resolve the reviewed ROCm digest. -->
+  <instance name="llama" fingerprint="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"><config>
+    <entry key="oci.uid" value="1000"/><entry key="oci.gid" value="1000"/>
+    <entry key="environment.LLAMA_CACHE" value="/var/cache/llama"/>
+    <entry key="environment.LLAMA_ARG_MODELS_PRESET" value="/etc/llama/models.ini"/>
+    <entry key="environment.LLAMA_ARG_MODELS_MAX" value="1"/>
+    <entry key="environment.LLAMA_ARG_MODELS_AUTOLOAD" value="true"/>
+    <entry key="environment.LLAMA_ARG_HOST" value="0.0.0.0"/>
+    <entry key="environment.LLAMA_ARG_PORT" value="8080"/>
+    <entry key="environment.LLAMA_ARG_ENDPOINT_METRICS" value="1"/>
+    <entry key="environment.LLAMA_ARG_UI" value="false"/>
+  </config>
+  <device name="root" type="disk"><config><entry key="path" value="/"/><entry key="pool" value="pool"/></config></device>
+  <device name="eth0" type="nic"><config><entry key="network" value="private"/><entry key="name" value="eth0"/><entry key="ipv4.address" value="10.20.0.30"/></config></device>
+  <device name="cache" type="disk"><config><entry key="path" value="/var/cache/llama"/><entry key="pool" value="pool"/><entry key="source" value="llama-cache"/></config></device>
+  <device name="gpu" type="gpu"><config><entry key="gputype" value="physical"/><entry key="pci" value="0000:03:00.0"/><entry key="uid" value="1000"/><entry key="gid" value="1000"/><entry key="mode" value="0660"/></config></device>
+  <device name="kfd" type="unix-char"><config><entry key="source" value="/dev/kfd"/><entry key="path" value="/dev/kfd"/><entry key="uid" value="1000"/><entry key="gid" value="1000"/><entry key="mode" value="0660"/></config></device>
+  <mount name="settings" configuration="llama-models" pool="pool" path="/etc/llama" uid="1000" gid="1000" mode="0644"/>
+  </instance>
+</incus>

@@ -212,6 +212,21 @@ final class PasskeyBrowser implements AutoCloseable {
                 })()
                 """).getAsJsonObject();
     }
+    JsonObject webuiUser() throws Exception {
+        return evaluate("""
+                (async () => {
+                    const response = await fetch('/api/v1/auths/', {signal:AbortSignal.timeout(8000)});
+                    if (response.status !== 200) return {status:response.status};
+                    const body = await response.json();
+                    return {status:response.status,id:body.id,email:body.email,name:body.name,role:body.role};
+                })()
+                """).getAsJsonObject();
+    }
+    void clearWebuiSession() throws Exception {
+        navigate(OpenWebuiFixture.ORIGIN + "/health", OpenWebuiFixture.ORIGIN);
+        evaluate("localStorage.clear(); sessionStorage.clear(); true");
+        privateValues(); clearSession(); portal();
+    }
     Set<String> privateValues() throws Exception {
         var cookies = call("Network.getAllCookies", new JsonObject()).getAsJsonArray("cookies");
         for (var cookie : cookies) privateValues.add(cookie.getAsJsonObject().get("value").getAsString());

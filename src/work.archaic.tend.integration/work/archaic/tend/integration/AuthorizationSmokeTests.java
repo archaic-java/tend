@@ -18,6 +18,9 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
             garden.reconcile();
             assert garden.lastSuccess().equals(first) : "Tend must activate the protected ingress main commit";
             fixture.prepare();
+            String privateUsers = fixture.privateUsers();
+            assert fixture.privateDelivery().strip().equals("0:0:700\n0:0:400") : "Operator user volume must use explicit private directory/file metadata";
+            assert incus.run(java.time.Duration.ofSeconds(10), "exec", AuthorizationFixture.AUTH, "--", "touch", "/etc/private-users/forbidden").status() != 0 : "Private user delivery must be read-only";
             try (var browser = new PasskeyBrowser(incus, garden.directory)) {
                 String requests = fixture.requests();
                 var anonymous = fixture.request(null);
@@ -64,6 +67,15 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 carol = fixture.request("carol");
                 assert carol.status() == 0 && carol.output().contains("user=carol") && carol.output().contains("status=200") : "New main must admit admins";
 
+                fixture.updatePrivateGroups(true);
+                assert fixture.login("alice").output().strip().equals("200") : "Updated private user must log in after bounded activation";
+                assert fixture.request("alice").output().contains("status=200") : "Operator group update must activate without a public Git credential change";
+                assert fixture.login("bob").output().strip().equals("200") && fixture.request("bob").output().contains("status=403") : "Updating one user's groups must keep unrelated denied accounts denied";
+                fixture.updatePrivateGroups(false);
+                assert fixture.privateUsers().equals(privateUsers) : "Restoring operator groups must preserve private identity and password hash";
+                garden.reconcile();
+                assert fixture.privateUsers().equals(privateUsers) : "Reconciliation must never overwrite operator-issued users";
+                trail.note("Private read-only users: explicit metadata, bounded group replacement and retained outsider denial");
                 String generated = fixture.policy();
                 assert generated.contains("group:admins") : "Mounted policy must reflect the new Git declaration";
                 fixture.drift(generated.replace("group:admins", "group:observers"));
@@ -327,8 +339,56 @@ record LoginGroupsGitPolicyAndDriftRepair() implements TestCase {
                 assert !grafana.leakedInEvidence(browser.privateValues()) : "Grafana secrets, browser sessions, authorization codes and JWTs must stay out of service logs and uploaded evidence";
                 trail.note("Real Grafana OCI login, identity, group/strict-role decisions and persistent data verified");
                 System.out.println("Grafana smoke: OCI consumer completes passkey OIDC login, maps identity and admin roles, denies outside-group and unmapped-role users, and preserves identity across restart and Git activation.");
+
+                var webui = new OpenWebuiFixture(incus, garden, grafana);
+                garden.source("webui-start.sh", Files.readString(Path.of("examples/openwebui/start.sh")));
+                garden.source("oidc.yml", webui.provider());
+                String webuiRevision = garden.commitXml(webui.xml(), "Deploy real Open WebUI with issuer admission and file-backed secrets");
+                garden.reconcile(); fixture.ready(); grafana.dns(); webui.ready();
+                assert garden.lastSuccess().equals(webuiRevision) : "Git must activate the actual Open WebUI OCI consumer";
+                var delivery = incus.run(java.time.Duration.ofSeconds(10), "exec", OpenWebuiFixture.INSTANCE, "--", "stat", "-c", "%u:%g:%a", "/etc/tend-webui-client/value", "/etc/tend-webui-session/value");
+                assert delivery.status() == 0 && delivery.output().strip().equals("0:0:400\n0:0:400") : "Wrapper secrets must be private read-only files for the declared OCI user";
+                assert incus.run(java.time.Duration.ofSeconds(10), "exec", OpenWebuiFixture.INSTANCE, "--", "touch", "/etc/tend-webui-client/forbidden").status() != 0 : "Secret delivery must be read-only";
+                browser.clearWebuiSession();
+                assert browser.password("carol") == 200 : "Admins-only user must authenticate before testing admission";
+                browser.navigate(OpenWebuiFixture.ORIGIN + "/oauth/oidc/login", OpenWebuiFixture.ORIGIN);
+                assert browser.webuiUser().get("status").getAsInt() != 200 : "Admins-only account must be denied even before first-user bootstrap";
+                fixture.updatePrivateGroups("carol", java.util.List.of("admins", "ai-users"));
+                browser.clearWebuiSession();
+                assert browser.password("carol") == 200 : "Admin with ai-users must authenticate using the retained private identity";
+                browser.navigate(OpenWebuiFixture.ORIGIN + "/oauth/oidc/login", OidcFixture.ISSUER);
+                assert browser.consent().get("client").getAsString().equals(OpenWebuiFixture.CLIENT) : "Actual consumer must request its own confidential client";
+                browser.acceptConsent(OpenWebuiFixture.CLIENT, OpenWebuiFixture.ORIGIN);
+                user = browser.webuiUser();
+                assert user.get("status").getAsInt() == 200 && user.get("email").getAsString().equals("carol@example.invalid") && user.get("role").getAsString().equals("admin") : "Application user endpoint must confirm admitted admin identity";
+                browser.clearWebuiSession();
+                assert browser.password("alice") == 200 : "Ordinary ai-users identity must authenticate";
+                browser.navigate(OpenWebuiFixture.ORIGIN + "/oauth/oidc/login", OidcFixture.ISSUER);
+                browser.acceptConsent(OpenWebuiFixture.CLIENT, OpenWebuiFixture.ORIGIN);
+                user = browser.webuiUser();
+                assert user.get("status").getAsInt() == 200 && user.get("email").getAsString().equals("alice@example.invalid") && user.get("name").getAsString().equals("Alice") && user.get("role").getAsString().equals("user") : "Actual callback must map ordinary ai-users identity without admin elevation";
+                String webuiUserId = user.get("id").getAsString();
+                webui.staleDatabaseSettings(); incus.require("restart", OpenWebuiFixture.INSTANCE); webui.ready();
+                var settings = browser.evaluate("(async()=>{const r=await fetch('/api/config');const b=await r.json();return {status:r.status,login:b.features.enable_login_form,signup:b.features.enable_signup};})()").getAsJsonObject();
+                assert settings.get("status").getAsInt() == 200 && !settings.get("login").getAsBoolean() && !settings.get("signup").getAsBoolean() : "Existing database must not override Git-disabled login and signup";
+                browser.clearWebuiSession();
+                assert browser.password("alice") == 200 : "Ordinary user must begin a fresh callback after stale database seeding";
+                browser.navigate(OpenWebuiFixture.ORIGIN + "/oauth/oidc/login", OidcFixture.ISSUER);
+                browser.acceptConsent(OpenWebuiFixture.CLIENT, OpenWebuiFixture.ORIGIN);
+                user = browser.webuiUser();
+                assert user.get("status").getAsInt() == 200 && user.get("id").getAsString().equals(webuiUserId) && user.get("role").getAsString().equals("user") : "Persisted OAuth overrides must not replace Git admission or retained identity";
+                browser.clearWebuiSession();
+                assert browser.password("bob") == 200 : "Outside-group account must authenticate before consumer admission denial";
+                browser.navigate(OpenWebuiFixture.ORIGIN + "/oauth/oidc/login", OpenWebuiFixture.ORIGIN);
+                assert browser.webuiUser().get("status").getAsInt() != 200 : "Observer must not obtain an application session";
+                fixture.updatePrivateGroups("carol", java.util.List.of("admins"));
+                assert !webui.leaked(browser.privateValues()) : "Wrapper secrets, OAuth codes, browser cookies and tokens must be absent from console and uploaded evidence";
+                trail.note("Real Open WebUI callback and user endpoint: ordinary/admin roles, ai-users admission, Git overrides and private wrapper verified");
             }
 
+            assert fixture.privateUsers().equals(privateUsers) : "All configuration activations and process restarts must preserve operator users";
+            assert fixture.privateEvidenceExcluded() : "Private user hashes and passwords must be absent from Git and uploaded evidence";
+            assert !Files.readString(garden.directory.resolve("author/incus.xml")).contains(privateUsers) : "Private user database must never enter public desired XML";
         }
     }
 }

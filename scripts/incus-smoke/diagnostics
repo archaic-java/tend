@@ -35,7 +35,7 @@ capture managed-state sudo incus info tend-ci-managed
 capture managed-volume sudo incus storage volume show tend-ci-pool tend-ci-data
 for name in gateway ingress-backend ingress-authorization ingress-client auth-gateway auth-service auth-backend auth-client; do
     capture "$name" sudo incus config show "tend-ci-$name" --expanded
-    capture "$name-console" sudo incus console "tend-ci-$name" --show-log
+    if [[ $name != auth-service ]]; then capture "$name-console" sudo incus console "tend-ci-$name" --show-log; fi
     capture "$name-addresses" sudo incus exec "tend-ci-$name" -- /bin/busybox ip address
     capture "$name-routes" sudo incus exec "tend-ci-$name" -- /bin/busybox ip route
 done
@@ -44,8 +44,6 @@ capture caddyfile sudo incus exec tend-ci-gateway -- cat /etc/caddy/Caddyfile
 capture caddy-service sudo incus exec tend-ci-gateway -- rc-service tend-caddy status
 capture auth-caddy-log sudo incus exec tend-ci-auth-gateway -- cat /var/log/tend-caddy.log
 capture auth-caddyfile sudo incus exec tend-ci-auth-gateway -- cat /etc/caddy/Caddyfile
-capture authelia-log sudo incus exec tend-ci-auth-service -- cat /var/log/tend-authelia.log
-capture authelia-service sudo incus exec tend-ci-auth-service -- rc-service tend-authelia status
 capture access-control sudo incus exec tend-ci-auth-service -- cat /etc/tend-authorization/access-control.json
 capture grafana sudo incus config show tend-ci-grafana --expanded
 capture grafana-state sudo incus info tend-ci-grafana
@@ -61,9 +59,32 @@ capture pi-network sudo incus network show tend-ci-pi-net
 # Pi has only synthetic configuration and no credentials. Do not upload session/workspace contents.
 # Never capture user databases, secret files, cookies, login bodies or private keys.
 capture volumes sudo incus storage volume list tend-ci-pool
+capture oci-controller sudo incus config show tend-ci-watch --project tend-ci-oci --expanded
+capture oci-controller-state sudo incus info tend-ci-watch --project tend-ci-oci
+capture oci-application sudo incus config show tend-ci-oci-app --project tend-ci-oci --expanded
+capture oci-controller-network sudo incus network show tend-ci-ctl
+# Never capture the controller console, private Java arguments, Git auth or secret/state bytes.
+# The case inspects them privately and reports only safe assertions.
 capture operations sudo incus operation list
 capture acl sudo incus network acl show tend-ci-egress
 capture client-console sudo incus console tend-ci-client --show-log
 capture server-console sudo incus console tend-ci-server --show-log
 capture nft sudo nft list ruleset
 capture iptables sudo iptables-save
+
+# Native application diagnostics expose configuration/health, never credential files or raw consoles.
+for name in tend-ci-native-gateway tend-ci-native-auth tend-ci-native-backend tend-ci-native-client; do
+    capture "$name-config" sudo incus config show "$name" --expanded
+    capture "$name-state" sudo incus info "$name"
+done
+capture native-lan sudo incus network show tend-ci-nlan
+
+for name in tend-ci-prometheus tend-ci-monitor-grafana; do
+    capture "$name-config" sudo incus config show "$name" --expanded
+    capture "$name-state" sudo incus info "$name"
+done
+# Monitoring keys, curl credentials, raw Grafana logs and TLS stores are excluded.
+
+capture openwebui sudo incus config show tend-ci-openwebui --expanded
+capture openwebui-state sudo incus info tend-ci-openwebui
+# OAuth application and issuer logs are inspected privately; do not upload raw consoles.

@@ -1,0 +1,37 @@
+<incus project="garden">
+  <secret name="grafana-admin"/><secret name="grafana-encryption"/>
+  <configuration name="prometheus"><file path="/prometheus.yml" source="prometheus.json"/></configuration>
+  <configuration name="datasources"><file path="/datasources.yml" source="datasources.json"/></configuration>
+  <configuration name="dashboard-provider"><file path="/provider.yml" source="dashboards.json"/></configuration>
+  <configuration name="incus-dashboard"><file path="/incus.json" source="incus.json"/></configuration>
+  <volume pool="pool" name="incus-metrics" private-owner="garden" private-kind="metrics" private-uid="65534"/>
+  <volume pool="pool" name="prometheus-data"><config>
+    <entry key="security.shifted" value="true"/><entry key="initial.uid" value="65534"/><entry key="initial.gid" value="65534"/><entry key="initial.mode" value="0700"/>
+  </config></volume>
+  <volume pool="pool" name="grafana-data"><config>
+    <entry key="security.shifted" value="true"/><entry key="initial.uid" value="472"/><entry key="initial.gid" value="0"/><entry key="initial.mode" value="0700"/>
+  </config></volume>
+  <instance name="prometheus" fingerprint="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">
+    <config><entry key="oci.uid" value="65534"/><entry key="oci.gid" value="65534"/></config>
+    <device name="root" type="disk"><config><entry key="pool" value="pool"/><entry key="path" value="/"/></config></device>
+    <device name="eth0" type="nic"><config><entry key="network" value="garden-private"/><entry key="ipv4.address" value="10.20.0.14"/></config></device>
+    <device name="data" type="disk"><config><entry key="pool" value="pool"/><entry key="source" value="prometheus-data"/><entry key="path" value="/prometheus"/></config></device>
+    <device name="metrics" type="disk"><config><entry key="pool" value="pool"/><entry key="source" value="incus-metrics"/><entry key="path" value="/etc/incus-tls"/><entry key="readonly" value="true"/></config></device>
+    <mount name="settings" configuration="prometheus" pool="pool" path="/etc/prometheus" uid="65534" gid="65534" mode="0644"/>
+  </instance>
+  <instance name="grafana" fingerprint="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">
+    <config><entry key="oci.uid" value="472"/><entry key="oci.gid" value="0"/>
+      <entry key="environment.GF_SECURITY_ADMIN_PASSWORD__FILE" value="/etc/tend-grafana-admin/value"/>
+      <entry key="environment.GF_SECURITY_SECRET_KEY__FILE" value="/etc/tend-grafana-encryption/value"/>
+      <entry key="environment.GF_METRICS_ENABLED" value="true"/>
+    </config>
+    <device name="root" type="disk"><config><entry key="pool" value="pool"/><entry key="path" value="/"/></config></device>
+    <device name="eth0" type="nic"><config><entry key="network" value="garden-private"/><entry key="ipv4.address" value="10.20.0.13"/></config></device>
+    <device name="data" type="disk"><config><entry key="pool" value="pool"/><entry key="source" value="grafana-data"/><entry key="path" value="/var/lib/grafana"/></config></device>
+    <mount name="datasources" configuration="datasources" pool="pool" path="/etc/grafana/provisioning/datasources" uid="472" gid="0" mode="0644"/>
+    <mount name="provider" configuration="dashboard-provider" pool="pool" path="/etc/grafana/provisioning/dashboards" uid="472" gid="0" mode="0644"/>
+    <mount name="dashboard" configuration="incus-dashboard" pool="pool" path="/etc/tend-dashboards" uid="472" gid="0" mode="0644"/>
+    <mount name="admin" secret="grafana-admin" pool="pool" path="/etc/tend-grafana-admin" uid="472" gid="0"/>
+    <mount name="encryption" secret="grafana-encryption" pool="pool" path="/etc/tend-grafana-encryption" uid="472" gid="0"/>
+  </instance>
+</incus>

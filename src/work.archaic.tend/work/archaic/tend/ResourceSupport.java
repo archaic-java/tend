@@ -29,6 +29,18 @@ final class ResourceSupport {
         if (resource != null && !owner.equals(value(resource.value().getAsJsonObject("config"), OWNER)))
             throw new ReconciliationException("Existing resource is not owned by this controller");
     }
+    void checkPrivateVolume(IncusClient.Resource resource, String readonly) throws ReconciliationException {
+        var config = resource.value().getAsJsonObject("config");
+        if (value(config, "user.tend.private").isEmpty()) return;
+        if (!owner.equals(value(config, "user.tend.private")) || !value(config, OWNER).isEmpty())
+            throw new ReconciliationException("Private volume ownership is ambiguous or differs from this scope");
+        if (!"true".equals(readonly) || !"true".equals(value(config, "security.shifted")) ||
+                !"0700".equals(value(config, "initial.mode")) ||
+                !value(config, "initial.uid").matches("[0-9]+") ||
+                !value(config, "initial.uid").equals(value(config, "initial.gid")) ||
+                !Set.of("users", "metrics", "smtp").contains(value(config, "user.tend.private.kind")))
+            throw new ReconciliationException("Private volume requires explicit shifted ownership, private directory and read-only delivery");
+    }
     static List<String> tracked(JsonObject config, String key) throws ReconciliationException {
         String text = value(config, key);
         if (text.isEmpty()) return List.of();

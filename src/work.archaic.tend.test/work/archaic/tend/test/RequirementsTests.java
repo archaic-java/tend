@@ -20,6 +20,9 @@ public record RequirementsTests() implements TestSuite {
         cases.add(new NamedConfigurationChanges());
         cases.add(new RemovedConfigurationFile());
         cases.add(new IngressProjection());
+        cases.add(new PrivateGatewayMetrics());
+        cases.add(new FlatMonitoringProvisioning());
+        cases.add(new LlamaDeviceProjection());
         cases.add(new IngressIdempotence());
         cases.add(new AuthorizationActivationFails());
         cases.add(new EgressProjection());
@@ -316,6 +319,75 @@ record UnshiftedFileVolume() implements TestCase {
             catch (work.archaic.tend.state.StateException expected) { rejected = true; }
             assert rejected : "File volumes without explicit idmapped mounts must fail before deployment";
             assert f.mock.mutations == 0 : "Unsupported ID mapping must not partially deploy resources";
+        }
+    }
+}
+
+record PrivateGatewayMetrics() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (var f = new DeploymentFixture()) {
+            String xml = RequirementsFixture.ingress().replace("authorization-path=\"/etc/tend-authorization\"/>", "authorization-path=\"/etc/tend-authorization\"><metrics device=\"eth0\"/></ingress-gateway>");
+            xml = xml.replace("<instance name=\"caddy\" fingerprint=\"" + Garden.IMAGE + "\">", "<instance name=\"caddy\" fingerprint=\"" + Garden.IMAGE + "\"><device name=\"eth0\" type=\"nic\"><config><entry key=\"network\" value=\"garden-net\"/><entry key=\"ipv4.address\" value=\"10.20.0.12\"/></config></device>");
+            assert !xml.equals(RequirementsFixture.ingress()) : "Fixture must enable the private metrics declaration";
+            RequirementsFixture.apply(f, xml);
+            String caddy = RequirementsFixture.text(f, "Caddyfile");
+            assert caddy.contains("{\n    metrics\n}") && caddy.contains("http://10.20.0.12:9180") && caddy.contains("bind 10.20.0.12") : "Metrics must be explicitly bound to the private gateway NIC";
+            for (String header : List.of("Remote-User", "Remote-Email", "Remote-Groups", "Remote-Name", "X-Forwarded-User", "X-Forwarded-Email", "X-Forwarded-Groups"))
+                assert caddy.split("request_header -" + header, -1).length == 3 : "Every public and protected route must strip client identity headers";
+            int mutations = f.mock.mutations;
+            boolean rejected = false;
+            try { f.revision(xml.replace("10.20.0.12", "203.0.113.12"), "unchanged"); } catch (StateException e) { rejected = true; }
+            assert rejected && f.mock.mutations == mutations : "Public-address metrics must reject before mutation";
+        }
+    }
+}
+
+record FlatMonitoringProvisioning() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (var f = new DeploymentFixture()) {
+            for (String file : List.of("prometheus.json", "datasources.json", "dashboards.json", "incus.json"))
+                java.nio.file.Files.copy(java.nio.file.Path.of("examples/monitoring", file), f.garden.author.resolve(file));
+            String xml = java.nio.file.Files.readString(java.nio.file.Path.of("examples/monitoring/incus.xml")).replace("private-owner=\"garden\"", "private-owner=\"test-controller\"");
+            var privateConfig = JsonParser.parseString("""
+                    {"config":{"user.tend.private":"test-controller","user.tend.private.kind":"metrics","security.shifted":"true","initial.uid":"65534","initial.gid":"65534","initial.mode":"0700"}}
+                    """).getAsJsonObject();
+            f.mock.resources.put("/1.0/storage-pools/pool/volumes/custom/incus-metrics", privateConfig.deepCopy());
+            var desired = f.revision(xml, "monitoring"); f.engine.reconcile(desired);
+            var dashboards = f.mock.files.entrySet().stream().filter(e -> e.getKey().endsWith("/incus.json")).findFirst().orElseThrow().getValue();
+            assert dashboards.uid().equals("472") && dashboards.gid().equals("0") && dashboards.mode().equals("0644") : "Flat dashboards must be readable by the Grafana OCI UID";
+            var prometheus = f.mock.files.entrySet().stream().filter(e -> e.getKey().endsWith("/prometheus.yml")).findFirst().orElseThrow().getValue();
+            assert prometheus.uid().equals("65534") && prometheus.gid().equals("65534") : "Prometheus configuration must use its actual OCI identity";
+            var config = JsonParser.parseString(new String(prometheus.bytes(), java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+            var jobs = config.getAsJsonArray("scrape_configs");
+            assert jobs.size() == 6 : "The monitoring recipe must declare all six required scrape jobs";
+            var llama = jobs.get(5).getAsJsonObject();
+            assert llama.getAsJsonObject("params").getAsJsonArray("autoload").get(0).getAsString().equals("false") : "An idle model must never be activated just by a monitoring request";
+            var tls = jobs.get(4).getAsJsonObject().getAsJsonObject("tls_config");
+            assert tls.has("server_name") && tls.has("ca_file") && tls.has("cert_file") && tls.has("key_file") && !tls.has("insecure_skip_verify") : "Incus scraping requires explicit server identity/trust and separate private client credentials";
+            int mutations = f.mock.mutations; f.engine.reconcile(desired);
+            assert f.mock.mutations == mutations && f.mock.resources.get("/1.0/storage-pools/pool/volumes/custom/incus-metrics").equals(privateConfig) : "Unchanged monitoring must settle while retaining operator-owned TLS";
+        }
+    }
+}
+
+record LlamaDeviceProjection() implements TestCase {
+    public void run(TestTrail trail) throws Exception {
+        try (var f = new DeploymentFixture()) {
+            java.nio.file.Files.copy(java.nio.file.Path.of("examples/llama/models.ini"), f.garden.author.resolve("models.ini"));
+            String xml = java.nio.file.Files.readString(java.nio.file.Path.of("examples/llama/incus.xml"));
+            var desired = f.revision(xml, "llama"); f.engine.reconcile(desired);
+            var devices = f.mock.resources.get("/1.0/instances/llama").getAsJsonObject("devices");
+            assert devices.getAsJsonObject("gpu").get("pci").getAsString().equals("0000:03:00.0") && devices.getAsJsonObject("gpu").get("gputype").getAsString().equals("physical") : "GPU projection must bind only the selected physical PCI device";
+            assert devices.getAsJsonObject("kfd").get("source").getAsString().equals("/dev/kfd") && devices.getAsJsonObject("kfd").get("mode").getAsString().equals("0660") && devices.getAsJsonObject("kfd").get("uid").getAsString().equals("1000") : "KFD must be accessible to the declared consumer without world access";
+            var model = f.mock.files.entrySet().stream().filter(e -> e.getKey().endsWith("/models.ini")).findFirst().orElseThrow().getValue();
+            String text = new String(model.bytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assert model.uid().equals("1000") && model.gid().equals("1000") && model.mode().equals("0644") : "Read-only presets must be readable by UID 1000";
+            assert text.contains("[mimo]") && text.contains("MiMo-V2.6-Distill-Qwen-9B-Q5_K_M.gguf") && text.contains("ctx-size = 131072") && text.contains("no-mmproj = false") : "MiMo settings must match the audited baseline, including its literal projector flag";
+            assert text.contains("[qwen36]") && text.contains("Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf") && text.contains("ctx-size = 65536") && text.contains("spec-type = draft-mtp") && text.contains("spec-draft-n-max = 2") : "Qwen settings must retain context and MTP configuration";
+            var cache = f.mock.resources.get("/1.0/storage-pools/pool/volumes/custom/llama-cache").getAsJsonObject("config");
+            assert cache.get("initial.uid").getAsString().equals("1000") && cache.get("initial.mode").getAsString().equals("0750") : "Download cache must retain explicit writable consumer ownership";
+            int mutations = f.mock.mutations; f.engine.reconcile(desired);
+            assert mutations == f.mock.mutations : "Unchanged model/device declarations must settle";
         }
     }
 }

@@ -82,7 +82,8 @@ resource state. Incus operations use bounded waits and configuration PUTs use ET
 Start a fresh IncusOS installation with the [remote bootstrap procedure](skills/maintain-tend/references/incusos-bootstrap.md).
 It inventories the actual host, establishes operator-owned prerequisites, caches pinned images and
 records a validated manifest before application deployment. Controller installation and private
-input delivery are the next increments tracked by issues #13 and #14.
+input delivery follow the [OCI controller procedure](skills/maintain-tend/references/oci-controller.md)
+and issue #14, respectively.
 
 ```sh
 docker build -t tend:local .
@@ -90,14 +91,16 @@ docker run --rm tend:local --help
 ```
 
 The image runs as UID/GID 1000 and contains the JRE, Git, Tend, Culpa, the catalog and Gson.
-An authorized Incus operator will create the controller instance, attach a persistent custom
-volume at `/var/lib/tend`, supply TLS credentials and grant access to the intended project.
-The OCI `VOLUME` declaration does not provision that Incus volume. Set the instance entrypoint to
-`java @/run/tend/tls.args @cmd/run` and its command to the `watch` arguments with `/var/lib/tend`
-as state directory. Tend neither creates its own credentials nor reconciles its own instance.
+The operator procedure uses `scripts/bootstrap/export-controller` to build an identified OCI
+artifact and `scripts/bootstrap/controller` to create a stopped Incus controller with retained
+state and read-only private TLS/argument mounts. Incus's `oci.entrypoint` supplies the complete
+Java command, including `watch` arguments from a private file. The OCI `VOLUME` declaration
+does not provision Incus storage. Tend neither creates its own credentials nor reconciles itself.
 
 No image is published by this workflow, and the existing homelab is untouched. Secret backup/export
 and rotation remain deferred. Deleting the controller secret directory loses generated credentials;
 preserve its volume during replacement.
 
 See [development guidance](skills/maintain-tend/references/development.md) for test boundaries and the implementation sequence.
+
+Fresh private users, metrics TLS and optional SMTP credentials use [operator-owned read-only volumes](skills/maintain-tend/references/private-inputs.md); Tend retains ownership of generated application secrets.

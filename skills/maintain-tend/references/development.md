@@ -170,4 +170,6 @@ state across restart and Git activation. A sixth case deploys the pinned Pi harn
 agent/installer success, unprivileged systemd startup, frontend/health, Bash exclusion, actual
 custom-volume mounts, no-op stability and persistent data across restart. Its fixture readiness
 checks add no controller feature. VM update/replacement is tracked in issue #9. OCI controller
-deployment, two-factor and Open WebUI deployment remain unverified.
+deployment is covered separately by ControllerSmokeTests using the operator bootstrap scripts,
+native watch, retained controller identity and failure recovery. Two-factor and Open WebUI
+deployment remain unverified.

@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Operator-only delivery. Private values and provider diagnostics never reach stdout."""
+import json, os, pathlib, re, stat, subprocess, sys
+
+class Invalid(Exception): pass
+
+def require(ok, message):
+    if not ok: raise Invalid(message)
+
+def run(*args):
+    try:
+        p = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        raise Invalid('Private operation unavailable or timed out; consumers must remain stopped') from None
+    require(p.returncode == 0, 'Private operation failed; provider output withheld; reobserve before retry')
+    return p.stdout
+
+def api(*args): return run('incus', *args)
+
+def private(path, directory=False):
+    mode = path.lstat().st_mode
+    require(not mode & 0o077 and not stat.S_ISLNK(mode), 'Private inputs must exclude group/other access and symlinks')
+    require(stat.S_ISDIR(mode) if directory else stat.S_ISREG(mode), 'Expected private regular inputs')
+
+def unique(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, 'Duplicate private input key')
+        result[key] = value
+    return result
+
+def users(path):
+    data = json.loads(path.read_text(), object_pairs_hook=unique)
+    require(isinstance(data, dict) and set(data) == {'users'}, 'Expected a JSON-form Authelia users.yml')
+    entries = data['users']
+    require(isinstance(entries, dict) and bool(entries), 'Expected fresh users')
+    groups = set()
+    for name, user in entries.items():
+        require(re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}', name), 'Invalid private username')
+        require(isinstance(user, dict) and set(user) == {'displayname','password','email','groups'}, 'Expected explicit user identity, hash and groups')
+        require(all(isinstance(user[k], str) and user[k] for k in ['displayname','password','email']), 'Incomplete private identity')
+        require(re.fullmatch(r'\$argon2id\$v=19\$m=\d+,t=\d+,p=\d+\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+', user['password']), 'Expected Authelia-generated Argon2id password hash')
+        require(isinstance(user['groups'], list) and bool(user['groups']), 'Explicit groups required')
+        require(all(isinstance(g, str) and re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}',g) for g in user['groups']), 'Invalid private group')
+        require(len(set(user['groups'])) == len(user['groups']), 'Duplicate private group')
+        groups.update(user['groups'])
+    require({'admins','ai-users'} <= groups, 'Fresh users must explicitly supply admins and ai-users memberships')
+
+def main():
+    if sys.argv[1:] == ['--help']:
+        print('Usage: private-volume create|replace users|metrics|smtp REMOTE PROJECT POOL VOLUME OWNER UID PRIVATE_DIRECTORY [STOPPED_CONTROLLER]')
+        return
+    require(len(sys.argv) in (10,11), 'Expected explicit private-volume arguments; run --help')
+    mode, kind, remote, project, pool, volume, owner, uid, folder = sys.argv[1:10]
+    require(mode in ('create','replace') and kind in ('users','metrics','smtp'), 'Invalid delivery mode or input kind')
+    require(all(re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}', n) for n in [remote,project,pool,volume,owner]), 'Invalid resource identifier')
+    require(uid.isdigit() and int(uid) <= 65534, 'Expected explicit application UID/GID')
+    root = pathlib.Path(folder)
+    private(root, True)
+    files = {'users':['users.yml'], 'metrics':['client.crt','client.key','server.crt'], 'smtp':['password']}[kind]
+    expected_inputs = files + (['controller.crt'] if kind == 'metrics' else [])
+    require({p.name for p in root.iterdir()} == set(expected_inputs), 'Missing or ambiguous private input files')
+    for name in expected_inputs: private(root/name)
+    if kind == 'users': users(root/'users.yml')
+    if kind == 'smtp': require(0 < (root/'password').stat().st_size <= 8192, 'Expected a nonempty SMTP password file')
+    if kind == 'metrics':
+        certificate = run('openssl','x509','-in',str(root/'client.crt'),'-pubkey','-noout')
+        key = run('openssl','pkey','-in',str(root/'client.key'),'-pubout')
+        require(certificate == key, 'Metrics key does not match its certificate')
+        controller = run('openssl','x509','-in',str(root/'controller.crt'),'-fingerprint','-sha256','-noout')
+        metrics = run('openssl','x509','-in',str(root/'client.crt'),'-fingerprint','-sha256','-noout')
+        require(controller != metrics, 'Metrics must use a distinct operator-issued certificate')
+        run('openssl','x509','-in',str(root/'server.crt'),'-checkend','0','-noout')
+        run('openssl','x509','-in',str(root/'client.crt'),'-checkend','0','-noout')
+    # Everything above precedes any API access; everything below validates before mutation.
+    api('project','show',remote+':'+project)
+    api('storage','show',remote+':'+pool)
+    volumes = json.loads(api('storage','volume','list',remote+':'+pool,'--project',project,'--format=json'))
+    current = next((v for v in volumes if v['type']=='custom' and v['name']==volume), None)
+    config = {'security.shifted':'true','initial.uid':uid,'initial.gid':uid,'initial.mode':'0700',
+              'user.tend.private':owner,'user.tend.private.kind':kind}
+    if mode == 'create':
+        require(current is None and len(sys.argv)==10, 'Private volume exists or unexpected controller argument; refusing adoption')
+    if mode == 'replace':
+        require(current is not None and len(sys.argv)==11, 'Replacement requires the existing volume and stopped controller')
+        require(all(current.get('config',{}).get(k)==v for k,v in config.items()), 'Private volume ownership or delivery configuration differs')
+        require(not current.get('config',{}).get('user.tend.owner'), 'Tend-managed volume cannot hold operator inputs')
+        controller = sys.argv[10]
+        require(re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}',controller), 'Invalid controller identifier')
+        observed = json.loads(api('query',remote+':/1.0/instances/'+controller+'?project='+project))
+        require(observed.get('status')=='Stopped' and observed.get('config',{}).get('user.tend.bootstrap')==owner,
+                'Stop the recorded bootstrap controller before private input replacement')
+        for path in current.get('used_by',[]):
+            require(path.startswith('/1.0/instances/'), 'Unexpected private volume consumer')
+            consumer = json.loads(api('query',remote+':'+path))
+            require(consumer.get('status')=='Stopped', 'Stop every private volume consumer before replacement')
+    if mode == 'create':
+        api('storage','volume','create',remote+':'+pool,volume,'--project',project,*[k+'='+v for k,v in config.items()])
+    for name in files:
+        # Delete before replacement: Incus overwrite otherwise preserves prior metadata.
+        if mode == 'replace': api('storage','volume','file','delete',remote+':'+pool,volume+'/'+name,'--project',project)
+        api('storage','volume','file','push',str(root/name),remote+':'+pool,volume+'/'+name,'--project',project,
+            '--uid='+uid,'--gid='+uid,'--mode=0400')
+    print('Private delivery complete. Keep consumers stopped until application validation; start consumers before the controller. Retain this operator-owned volume.')
+
+if __name__ == '__main__':
+    os.umask(0o077)
+    try: main()
+    except (Invalid, OSError, ValueError, TypeError, KeyError):
+        # JSON/parser/provider errors can contain private input; never render their causes.
+        print('Private delivery rejected or incomplete. Check private inputs, ownership and stopped consumers locally; values and provider output withheld.', file=sys.stderr)
+        sys.exit(1)

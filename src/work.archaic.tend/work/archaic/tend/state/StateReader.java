@@ -47,9 +47,21 @@ public final class StateReader {
         for (Element e : children(root, "volume")) {
             String pool = e.getAttribute("pool"), name = e.getAttribute("name");
             unique(names, pool + "/" + name);
-            result.add(new Volume(pool, name, config(e), files(e, revision, secrets)));
+            var properties = config(e);
+            var privateFiles = files(e, revision, secrets);
+            boolean privateInput = e.hasAttribute("private-owner") || e.hasAttribute("private-kind") || e.hasAttribute("private-uid");
+            if (privateInput) properties = privateVolume(e, properties, privateFiles);
+            result.add(new Volume(pool, name, properties, privateFiles));
         }
         return result;
+    }
+    private static Map<String, String> privateVolume(Element e, Map<String, String> properties, List<DesiredState.File> files) throws StateException {
+        if (!e.hasAttribute("private-owner") || !e.hasAttribute("private-kind") || !e.hasAttribute("private-uid") || !properties.isEmpty() || !files.isEmpty())
+            throw new StateException("Private volume requires owner, kind and UID only; no managed configuration or files");
+        int uid = Integer.parseInt(e.getAttribute("private-uid"));
+        if (uid > 65534) throw new StateException("Private application UID exceeds supported range");
+        return Map.of("user.tend.private", e.getAttribute("private-owner"), "user.tend.private.kind", e.getAttribute("private-kind"),
+                "security.shifted", "true", "initial.uid", Integer.toString(uid), "initial.gid", Integer.toString(uid), "initial.mode", "0700");
     }
     private static List<DesiredState.File> files(Element volume, Revision revision, Set<String> secrets) throws IOException, InterruptedException {
         List<DesiredState.File> result = new ArrayList<>();
@@ -117,7 +129,7 @@ public final class StateReader {
         if (elements.isEmpty()) return null;
         var e = elements.getFirst();
         return new Gateway(e.getAttribute("instance"), e.getAttribute("pool"), e.getAttribute("path"), e.getAttribute("authorization-instance"),
-                e.getAttribute("authorization-device"), integer(e, "authorization-port"), e.getAttribute("authorization-path"), integer(e, "uid"), integer(e, "gid"), integer(e, "authorization-uid"), integer(e, "authorization-gid"));
+                e.getAttribute("authorization-device"), integer(e, "authorization-port"), e.getAttribute("authorization-path"), integer(e, "uid"), integer(e, "gid"), integer(e, "authorization-uid"), integer(e, "authorization-gid"), children(e, "metrics").isEmpty() ? "" : children(e, "metrics").getFirst().getAttribute("device"));
     }
     private static List<Ingress> ingresses(Element root) throws StateException {
         List<Ingress> result = new ArrayList<>();
