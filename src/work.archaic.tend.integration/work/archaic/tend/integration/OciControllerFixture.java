@@ -14,6 +14,7 @@ final class OciControllerFixture {
     private static final String STATE = "tend-ci-watch-state";
     private static final String BOOTSTRAP = "tend-ci-watch-bootstrap";
     private static final String GIT = "tend-ci-watch-git";
+    private final String project;
     private final IncusCommands commands;
     private final RealGarden garden;
     private final Path privateDirectory;
@@ -21,8 +22,10 @@ final class OciControllerFixture {
     private int privateSequence;
 
     OciControllerFixture(IncusCommands commands, RealGarden garden) throws IOException {
-        this.commands = commands; this.garden = garden;
-        privateDirectory = Path.of(Files.readString(Path.of("out/incus-smoke/controller-directory.txt")).strip());
+        this(commands, garden, PROJECT, Path.of(Files.readString(Path.of("out/incus-smoke/controller-directory.txt")).strip()));
+    }
+    OciControllerFixture(IncusCommands commands, RealGarden garden, String project, Path privateDirectory) throws IOException {
+        this.commands = commands; this.garden = garden; this.project = project; this.privateDirectory = privateDirectory;
         fingerprint = Files.readString(Path.of("out/incus-smoke/controller-fingerprint.txt")).strip();
         if (!fingerprint.matches("[a-f0-9]{64}")) throw new IOException("Expected cached controller OCI fingerprint");
     }
@@ -33,8 +36,8 @@ final class OciControllerFixture {
 
     void bootstrap(String mode) throws IOException, InterruptedException {
         var result = commands.command(Duration.ofMinutes(3), List.of("sudo", "-n", "bash",
-                "scripts/bootstrap/controller", mode, "local", PROJECT, "tend-ci-pool",
-                "tend-ci-ctl", fingerprint, CONTROLLER, STATE, BOOTSTRAP, PROJECT,
+                "scripts/bootstrap/controller", mode, "local", project, "tend-ci-pool",
+                project.equals("tend-ci-rebuild") ? "tend-ci-full" : "tend-ci-ctl", fingerprint, CONTROLLER, STATE, BOOTSTRAP, project,
                 privateDirectory.toString()));
         if (result.status() != 0) throw new IOException("Operator OCI bootstrap failed; private details withheld");
     }
@@ -42,7 +45,7 @@ final class OciControllerFixture {
     void prepareGit() throws IOException, InterruptedException {
         require("storage", "volume", "create", "tend-ci-pool", GIT,
                 "security.shifted=true", "initial.uid=1000", "initial.gid=1000", "initial.mode=0700",
-                "user.tend.bootstrap=" + PROJECT);
+                "user.tend.bootstrap=" + project);
         require("storage", "volume", "file", "create", "tend-ci-pool", GIT + "/remote.git",
                 "--type=directory", "--uid=1000", "--gid=1000", "--mode=0700");
         copyGit();
@@ -75,7 +78,7 @@ final class OciControllerFixture {
             return;
         }
         commands.require("config", "trust", "add-certificate", privateDirectory.resolve("client.crt").toString(),
-                "--name=tend-ci-oci", "--restricted", "--projects=" + PROJECT);
+                "--name=tend-ci-oci", "--restricted", "--projects=" + project);
     }
 
     void trustStore(boolean correct) throws IOException, InterruptedException {
@@ -85,17 +88,49 @@ final class OciControllerFixture {
     }
 
     String lastSuccess() throws IOException, InterruptedException {
-        var result = privateIncus("exec", CONTROLLER, "--project", PROJECT, "--", "cat", "/var/lib/tend/last-success");
+        var result = privateIncus("exec", CONTROLLER, "--project", project, "--", "cat", "/var/lib/tend/last-success");
         return result.status() == 0 ? result.output().strip() : "";
     }
 
     boolean converged(String revision) throws IOException, InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
+        long deadline = System.nanoTime() + Duration.ofSeconds(project.equals("tend-ci-rebuild") ? 300 : 90).toNanos();
         do {
             if (lastSuccess().equals(revision)) return true;
             Thread.sleep(300);
         } while (System.nanoTime() < deadline);
+        diagnoseConvergence();
         return false;
+    }
+
+    private void diagnoseConvergence() throws IOException, InterruptedException {
+        // Classify private console bytes; export only fixed labels, never excerpts or causes.
+        var console = privateIncus("console", CONTROLLER, "--project", project, "--show-log");
+        var labels = new ArrayList<String>();
+        for (var marker : Map.ofEntries(
+                Map.entry("could not open", "launch-file-unreadable"),
+                Map.entry("Permission denied", "permission-denied"),
+                Map.entry("Module ", "module-resolution"),
+                Map.entry("FindException", "module-resolution-exception"),
+                Map.entry("Could not find or load main class", "main-class-unavailable"),
+                Map.entry("Cannot prepare controller state", "state-preparation-failed"),
+                Map.entry("Run --help for arguments", "launch-arguments-invalid"),
+                Map.entry("Expected exactly one Log provider", "logging-provider-unavailable"),
+                Map.entry("Another Tend process", "state-writer-conflict"),
+                Map.entry("Reconciliation failed", "watch-attempt-failed"),
+                Map.entry("SSLContext", "tls-context-initialization"),
+                Map.entry("KeyManagementException", "tls-key-management"),
+                Map.entry("OutOfMemoryError", "jvm-memory-failure"),
+                Map.entry("unable to create native thread", "jvm-thread-failure"),
+                Map.entry("execvp", "entrypoint-execution-failed"),
+                Map.entry("No such file or directory", "runtime-file-unavailable")
+        ).entrySet()) {
+            if (console.output().contains(marker.getKey())) labels.add(marker.getValue());
+        }
+        Collections.sort(labels);
+        Files.writeString(Path.of("out/incus-smoke", "controller-convergence-" + project + ".txt"),
+                "console-observation-status=" + console.status() + "\n" +
+                "classifications=" + labels + "\n" +
+                "private-console-excerpts-withheld=true\n");
     }
 
     String version() throws IOException, InterruptedException {
@@ -128,13 +163,13 @@ final class OciControllerFixture {
     }
 
     private String readPrivate(String instance, String path) throws IOException, InterruptedException {
-        var result = privateIncus("exec", instance, "--project", PROJECT, "--", "cat", path);
+        var result = privateIncus("exec", instance, "--project", project, "--", "cat", path);
         if (result.status() != 0) throw new IOException("Cannot inspect private controller persistence");
         return result.output();
     }
 
     long failures() throws IOException, InterruptedException {
-        var result = privateIncus("console", CONTROLLER, "--project", PROJECT, "--show-log");
+        var result = privateIncus("console", CONTROLLER, "--project", project, "--show-log");
         if (result.status() != 0) throw new IOException("Cannot inspect private controller console");
         return result.output().lines().filter(line -> line.contains("Reconciliation failed")).count();
     }
@@ -149,7 +184,7 @@ final class OciControllerFixture {
     }
 
     boolean secretsExcluded(List<String> secrets) throws IOException, InterruptedException {
-        var console = privateIncus("console", CONTROLLER, "--project", PROJECT, "--show-log");
+        var console = privateIncus("console", CONTROLLER, "--project", project, "--show-log");
         if (console.status() != 0) throw new IOException("Cannot inspect private controller console");
         var values = new ArrayList<>(secrets);
         values.add(Files.readString(privateDirectory.resolve("store-password")).strip());
@@ -188,8 +223,8 @@ final class OciControllerFixture {
         if (result.status() != 0) throw new IOException("OCI controller observation failed; see safe command evidence");
         return result.output();
     }
-    private static String[] scoped(String[] arguments) {
-        var result = new ArrayList<>(List.of("--project", PROJECT)); result.addAll(List.of(arguments));
+    private String[] scoped(String[] arguments) {
+        var result = new ArrayList<>(List.of("--project", project)); result.addAll(List.of(arguments));
         return result.toArray(String[]::new);
     }
 

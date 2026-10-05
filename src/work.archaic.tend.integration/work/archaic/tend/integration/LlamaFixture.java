@@ -25,7 +25,7 @@ final class LlamaFixture {
                 .replace("</configuration>", "<file path=\"/llama-protocol.py\" source=\"llama-protocol.py\"/></configuration>");
         // Exact device removal is a deliberate reviewed CPU-only substitution.
         fragment = fragment.replaceAll("(?s)  <device name=\"(?:gpu|kfd)\".*?</device>\\n", "");
-        return monitoring.replace("</incus>", fragment + "</incus>");
+        return FixtureXml.ordered(monitoring.replace("</incus>", fragment + "</incus>"));
     }
     IncusCommands.Result request(String method, String path, String body) throws IOException, InterruptedException {
         return incus.run(Duration.ofSeconds(12), "exec", NativeIngressFixture.CLIENT, "--", "curl", "--silent", "--show-error",

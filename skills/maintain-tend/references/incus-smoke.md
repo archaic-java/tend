@@ -21,6 +21,16 @@ the coherent revision or combined stack is ready; subsequent changes to that lab
 it, so remove the label while iterating. Push-to-main verification does not repeat the disposable
 suite automatically. Per-ref concurrency cancels superseded attempts. For stacked review, retain
 one final full-suite run whose head contains every dependent change, then link that evidence.
+If a failed combined run already passed OVN, reconciliation, egress and ingress, the additional
+`incus-resume-controller` PR label starts the next run at ControllerSmokeTests and continues
+through the remaining suites. Keep the prior run linked as evidence, and remove the continuation
+label when changes invalidate those earlier results. Local disposable reproduction accepts
+`TEND_SMOKE_FROM=ControllerSmokeTests bash scripts/incus-smoke/test`; the default runs all suites.
+A continuation success alone does not claim a complete full-suite pass.
+
+When OCI convergence times out, the fixture privately reads the controller console and retains
+only fixed startup classification labels in `controller-convergence-PROJECT.txt`. Raw console
+bytes, private arguments and provider causes remain outside uploaded evidence.
 
 The OVN Minau case starts two containers on `tend-ci-ovn`, with static IPv4 addresses. The server
 exposes the same HTTP response on 8080 and 8081. A statically linked BusyBox binary from the runner
@@ -308,3 +318,5 @@ must produce a failed CI job. Offline tests continue to use `java @cmd/test` ind
 The minimal Open WebUI consumer block reuses the authorization fixture and its native Authelia OCI issuer. See [Open WebUI](openwebui.md) for its digest, issuer admission gate and private wrapper. Raw OAuth application/issuer logs are never uploaded.
 
 The native monitoring case also exercises the explicitly controlled CPU llama protocol fixture. It proves API/model selection and idle monitoring, not llama binary/weights/ROCm. See [llama commissioning](llama.md) for the required hardware gate.
+
+Full-stack reproduction now uses `bash scripts/incus-smoke/test` to bound memory. The final case consumes the pinned complete garden recipe; see [rebuild acceptance](rebuild.md). Production inputs and hardware/ACME/ZFS/reboot gates remain separate.

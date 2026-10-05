@@ -12,6 +12,7 @@ import java.util.regex.Pattern;
 
 /** Test-only CDP probe. Credential material never enters command evidence or exception messages. */
 final class PasskeyBrowser implements AutoCloseable {
+    private final String issuer;
     private final Path directory;
     private Process process;
     private WebSocket socket;
@@ -22,28 +23,34 @@ final class PasskeyBrowser implements AutoCloseable {
     private final Set<String> privateValues = ConcurrentHashMap.newKeySet();
     private final StringBuilder navigationEvidence = new StringBuilder();
     PasskeyBrowser(IncusCommands incus, Path directory) throws Exception {
+        this(incus, directory, AuthorizationFixture.GATEWAY, "https://auth.garden.internal", null);
+    }
+    PasskeyBrowser(IncusCommands incus, Path directory, String gateway, String issuer, String project) throws Exception {
+        this.issuer = issuer;
         this.directory = directory.resolve("browser");
         Files.createDirectory(this.directory);
-        incus.require("config", "device", "add", AuthorizationFixture.GATEWAY, "browser-probe", "proxy",
-                "listen=tcp:127.0.0.1:443", "connect=tcp:127.0.0.1:443");
+        var proxyArguments = new ArrayList<>(List.of("config", "device", "add", gateway, "browser-probe", "proxy",
+                "listen=tcp:127.0.0.1:443", "connect=tcp:127.0.0.1:443"));
+        if (project != null) proxyArguments.addAll(List.of("--project", project));
+        incus.require(proxyArguments.toArray(String[]::new));
         Path ca = directory.resolve("root.crt");
         var proxy = incus.command(Duration.ofSeconds(10), List.of("curl", "--silent", "--show-error", "--noproxy", "*",
-                "--connect-timeout", "2", "--max-time", "8", "--cacert", ca.toString(), "--resolve", "auth.garden.internal:443:127.0.0.1",
-                "--output", "/dev/null", "--write-out", "%{http_code}", "https://auth.garden.internal/api/health"));
+                "--connect-timeout", "2", "--max-time", "8", "--cacert", ca.toString(), "--resolve", URI.create(issuer).getHost() + ":443:127.0.0.1",
+                "--output", "/dev/null", "--write-out", "%{http_code}", issuer + "/api/health"));
         if (proxy.status() != 0 || !proxy.output().strip().equals("200")) throw new IOException("Loopback HTTPS proxy probe failed: " + proxy.output());
         var portal = incus.command(Duration.ofSeconds(10), List.of("curl", "--silent", "--show-error", "--noproxy", "*",
-                "--connect-timeout", "2", "--max-time", "8", "--cacert", ca.toString(), "--resolve", "auth.garden.internal:443:127.0.0.1",
-                "--output", "/dev/null", "--write-out", "%{http_code}:%{content_type}", "https://auth.garden.internal/"));
+                "--connect-timeout", "2", "--max-time", "8", "--cacert", ca.toString(), "--resolve", URI.create(issuer).getHost() + ":443:127.0.0.1",
+                "--output", "/dev/null", "--write-out", "%{http_code}:%{content_type}", issuer + "/"));
         if (portal.status() != 0 || !portal.output().startsWith("200:text/html")) throw new IOException("Portal HTTPS response probe failed: " + portal.output());
         Path nss = Path.of(System.getProperty("user.home"), ".pki/nssdb");
         Files.createDirectories(nss);
         initializeTrustDatabase(incus, nss);
-        var trust = incus.command(Duration.ofSeconds(15), List.of("certutil", "-A", "-d", "sql:" + nss, "-n", "Tend disposable Caddy CA", "-t", "C,,", "-i", ca.toString()));
+        var trust = incus.command(Duration.ofSeconds(15), List.of("certutil", "-A", "-d", "sql:" + nss, "-n", "Tend disposable Caddy CA " + URI.create(issuer).getHost(), "-t", "C,,", "-i", ca.toString()));
         if (trust.status() != 0) throw new IOException("Cannot trust disposable gateway CA");
         try {
             process = new ProcessBuilder("google-chrome", "--headless=new", "--no-first-run", "--no-default-browser-check",
                     "--disable-background-networking", "--disable-default-apps", "--disable-extensions",
-                    "--no-proxy-server", "--host-resolver-rules=MAP *.garden.internal 127.0.0.1",
+                    "--no-proxy-server", "--host-resolver-rules=MAP *.garden.internal 127.0.0.1,MAP *.compose.localhost 127.0.0.1",
                     "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--user-data-dir=" + this.directory, "about:blank")
                     .redirectErrorStream(true).redirectOutput(this.directory.resolve("chrome.log").toFile()).start();
             process.getOutputStream().close();
@@ -84,7 +91,7 @@ final class PasskeyBrowser implements AutoCloseable {
         call("WebAuthn.enable", JsonParser.parseString("{\"enableUI\":false}").getAsJsonObject());
         JsonObject navigation = null;
         for (int attempt = 0; attempt < 3; attempt++) {
-            navigation = call("Page.navigate", JsonParser.parseString("{\"url\":\"https://auth.garden.internal/\"}").getAsJsonObject());
+            navigation = call("Page.navigate", JsonParser.parseString("{\"url\":" + new Gson().toJson(issuer + "/") + "}").getAsJsonObject());
             if (!navigation.has("errorText") || !navigation.get("errorText").getAsString().equals("net::ERR_ABORTED")) break;
             Thread.sleep(300);
         }
@@ -92,7 +99,7 @@ final class PasskeyBrowser implements AutoCloseable {
                 + "; download=" + navigation.get("isDownload") + "; " + navigationEvidence
                 + "; document=" + evaluate("({origin:location.origin,ready:document.readyState,title:document.title})"));
         long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
-        while (!evaluate("location.origin === 'https://auth.garden.internal' && document.readyState === 'complete'").getAsBoolean()) {
+        while (!evaluate("location.origin === " + new Gson().toJson(issuer) + " && document.readyState === 'complete'").getAsBoolean()) {
             if (System.nanoTime() > deadline) throw new IOException("Browser could not load verified gateway HTTPS: " + evaluate("({origin:location.origin,ready:document.readyState})"));
             Thread.sleep(100);
         }
@@ -134,7 +141,7 @@ final class PasskeyBrowser implements AutoCloseable {
     }
     private void rememberAuthorizationCode(JsonObject parameters) {
         var uri = URI.create(parameters.getAsJsonObject("request").get("url").getAsString());
-        if (uri.getHost() == null || !uri.getHost().endsWith(".garden.internal")) return;
+        if (uri.getHost() == null || !uri.getHost().endsWith(".garden.internal") && !uri.getHost().endsWith(".compose.localhost")) return;
         Map<String, String> query;
         try { query = OidcFixture.query(uri); }
         catch (IOException malformedQuery) { navigationEvidence.append(" malformedQuery"); return; }
@@ -167,7 +174,7 @@ final class PasskeyBrowser implements AutoCloseable {
         throw new IOException("Application browser did not reach the expected origin");
     }
     void portal() throws Exception {
-        navigate("https://auth.garden.internal/", "https://auth.garden.internal");
+        navigate(issuer + "/", issuer);
         probe();
     }
     void probe() throws Exception { evaluate(Files.readString(Path.of("scripts/incus-smoke/passkey-probe.js"))); }
@@ -198,7 +205,7 @@ final class PasskeyBrowser implements AutoCloseable {
                 })()
                 """.formatted(new Gson().toJson(client))).getAsString();
         URI uri = URI.create(redirect);
-        if (!uri.getScheme().equals("https") || !uri.getAuthority().equals("auth.garden.internal") || !uri.getPath().equals("/api/oidc/authorization"))
+        if (!uri.getScheme().equals("https") || !uri.getAuthority().equals(URI.create(issuer).getAuthority()) || !uri.getPath().equals("/api/oidc/authorization"))
             throw new IOException("Unexpected consent continuation");
         navigate(redirect, destination);
     }
