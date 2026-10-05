@@ -28,6 +28,21 @@ label when changes invalidate those earlier results. Local disposable reproducti
 `TEND_SMOKE_FROM=ControllerSmokeTests bash scripts/incus-smoke/test`; the default runs all suites.
 A continuation success alone does not claim a complete full-suite pass.
 
+After a continuation passes more suites, select its next failed suite with one of these labels.
+Use one continuation label at a time and retain the preceding run links. Every selection runs
+the selected suite and all remaining suites, including the composed rebuild.
+
+| PR label | Start suite |
+|---|---|
+| `incus-resume-controller` | `ControllerSmokeTests` |
+| `incus-resume-authorization` | `AuthorizationSmokeTests` |
+| `incus-resume-native` | `NativeIngressSmokeTests` |
+| `incus-resume-rebuild` | `RebuildSmokeTests` |
+
+The private-users restoration check compares all parsed JSON fields after an operator group
+edit, because Python preparation and Gson editing use different whitespace. The adjacent
+reconciliation check still requires identical private file bytes before and after Tend runs.
+
 When OCI convergence times out, the fixture privately reads the controller console and retains
 only fixed startup classification labels in `controller-convergence-PROJECT.txt`. Raw console
 bytes, private arguments and provider causes remain outside uploaded evidence.
